@@ -182,12 +182,25 @@
     }
   }
 
-  // Get product name for filename
-  function getProductName() {
+  // Get product ID from URL
+  function getProductId() {
+    try {
+      const pathname = window.location.pathname;
+      // Match /item/1234567890.html or /item/1234567890
+      const match = pathname.match(/\/item\/(\d+)/);
+      return match ? match[1] : null;
+    } catch (error) {
+      console.error("Error extracting product ID:", error);
+      return null;
+    }
+  }
+
+  // Get raw product name (full, unsanitized)
+  function getRawProductName() {
     // Priority: Use the specific AliExpress product title element
     const productTitle = document.querySelector('[data-pl="product-title"]');
     if (productTitle && productTitle.textContent.trim()) {
-      return sanitizeFilename(productTitle.textContent.trim());
+      return productTitle.textContent.trim();
     }
 
     // Fallback: Try other selectors
@@ -200,23 +213,54 @@
     for (const selector of titleSelectors) {
       const element = document.querySelector(selector);
       if (element && element.textContent.trim()) {
-        return sanitizeFilename(element.textContent.trim());
+        return element.textContent.trim();
       }
     }
 
     // Fallback to page title
-    return sanitizeFilename(document.title.split("-")[0].trim());
+    return document.title.split("-")[0].trim();
   }
 
-  // Sanitize filename
+  // Get product name for filename (sanitized, truncated for file naming)
+  function getProductName() {
+    const rawName = getRawProductName();
+    return sanitizeFilename(rawName);
+  }
+
+  // Create slug for folder name (lowercase, hyphens, URL-safe)
+  function slugify(name) {
+    return (
+      name
+        .toLowerCase()
+        .replace(/[^a-z0-9\s\-]/gi, "")
+        .replace(/\s+/g, "-")
+        .replace(/-{2,}/g, "-")
+        .replace(/^-|-$/g, "")
+        .substring(0, 100) || "product"
+    );
+  }
+
+  // Sanitize filename (for file naming, shorter)
   function sanitizeFilename(name) {
     return (
       name
         .replace(/[^a-z0-9\s\-\_]/gi, "")
         .replace(/\s+/g, "_")
         .replace(/_{2,}/g, "_")
-        .substring(0, 50) || "aliexpress_product"
+        .substring(0, 80) || "aliexpress_product"
     );
+  }
+
+  // Get folder name combining product ID and name
+  function getProductFolderName() {
+    const productId = getProductId();
+    const rawName = getRawProductName();
+    const slug = slugify(rawName);
+    
+    if (productId) {
+      return `${productId}-${slug}`;
+    }
+    return slug;
   }
 
   // Listen for messages from popup/sidebar
@@ -228,6 +272,9 @@
         images: mediaData.images,
         videos: mediaData.videos,
         productName: getProductName(),
+        productId: getProductId(),
+        rawProductName: getRawProductName(),
+        productFolderName: getProductFolderName(),
       });
       return true;
     }
@@ -262,10 +309,16 @@
   });
 
   // Upload media files to Google Drive
-  async function uploadToDrive(type, folderPath) {
+  async function uploadToDrive(type, baseFolderPath) {
     let productName = getProductName();
     let errors = [];
     let uploaded = 0;
+
+    // Auto-generate product folder path
+    const productFolderName = getProductFolderName();
+    const folderPath = baseFolderPath 
+      ? `${baseFolderPath.replace(/\/$/, '')}/${productFolderName}`
+      : productFolderName;
 
     // Collect files to upload
     const filesToProcess = [];

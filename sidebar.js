@@ -18,8 +18,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   const disconnectDriveBtn = document.getElementById("disconnectDrive");
   const folderSection = document.getElementById("folderSection");
   const folderPathInput = document.getElementById("folderPath");
-  const productNameSection = document.getElementById("productNameSection");
+  const productInfoSection = document.getElementById("productInfoSection");
+  const productIdEl = document.getElementById("productId");
   const productNameEl = document.getElementById("productName");
+  const productFolderEl = document.getElementById("productFolder");
   const imageCountEl = document.getElementById("imageCount");
   const videoCountEl = document.getElementById("videoCount");
   const uploadImagesBtn = document.getElementById("uploadImages");
@@ -33,6 +35,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   let isConnected = false;
   let hasClientId = false;
   let currentTab = null;
+  let currentProductFolderName = null; // Store current product folder name
 
   // Initialize
   await init();
@@ -44,10 +47,14 @@ document.addEventListener("DOMContentLoaded", async () => {
     // Check Google Drive connection status
     await checkDriveConnection();
 
-    // Load saved folder path
+    // Load saved folder path or set default
     const saved = await chrome.storage.local.get(["driveFolderPath"]);
     if (saved.driveFolderPath) {
       folderPathInput.value = saved.driveFolderPath;
+    } else {
+      // Set default folder path
+      folderPathInput.value = "AliExpressMedia";
+      await chrome.storage.local.set({ driveFolderPath: "AliExpressMedia" });
     }
 
     // Check current tab
@@ -241,9 +248,29 @@ document.addEventListener("DOMContentLoaded", async () => {
           imageCountEl.textContent = results.images.length;
           videoCountEl.textContent = results.videos.length;
 
-          if (results.productName) {
-            productNameSection.style.display = "block";
-            productNameEl.textContent = results.productName;
+          // Display product info
+          if (results.productId || results.rawProductName) {
+            productInfoSection.style.display = "block";
+
+            // Product ID
+            if (results.productId) {
+              productIdEl.textContent = results.productId;
+            } else {
+              productIdEl.textContent = "Tidak ditemukan";
+            }
+
+            // Product Name (full)
+            if (results.rawProductName) {
+              productNameEl.textContent = results.rawProductName;
+            }
+
+            // Folder path preview - store and display
+            if (results.productFolderName) {
+              currentProductFolderName = results.productFolderName;
+              const basePath =
+                folderPathInput.value.trim() || "AliExpressMedia";
+              productFolderEl.textContent = `${basePath}/${results.productFolderName}`;
+            }
           }
 
           updateUploadButtons();
@@ -340,7 +367,21 @@ document.addEventListener("DOMContentLoaded", async () => {
   folderPathInput.addEventListener("change", async () => {
     const path = folderPathInput.value.trim();
     await chrome.storage.local.set({ driveFolderPath: path });
+    // Update folder preview
+    updateFolderPreview();
   });
+
+  // Also update on input (real-time)
+  folderPathInput.addEventListener("input", () => {
+    updateFolderPreview();
+  });
+
+  function updateFolderPreview() {
+    if (currentProductFolderName) {
+      const basePath = folderPathInput.value.trim() || "AliExpressMedia";
+      productFolderEl.textContent = `${basePath}/${currentProductFolderName}`;
+    }
+  }
 
   uploadImagesBtn.addEventListener("click", () => uploadMedia("images"));
   uploadVideosBtn.addEventListener("click", () => uploadMedia("videos"));

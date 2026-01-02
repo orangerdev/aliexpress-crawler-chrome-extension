@@ -459,12 +459,12 @@
       
       <!-- Folder Selection -->
       <div class="folder-section" id="folderSection" style="display: none;">
-        <div class="section-title" style="margin-top: 15px;">📁 Folder Tujuan</div>
+        <div class="section-title" style="margin-top: 15px;">📁 Folder Dasar</div>
         <div class="folder-input-group">
-          <input type="text" id="folderPath" class="folder-input" placeholder="Contoh: AliExpress/Downloads">
+          <input type="text" id="folderPath" class="folder-input" placeholder="Contoh: AliExpressMedia" value="AliExpressMedia">
         </div>
         <div style="font-size: 11px; opacity: 0.7; margin-top: 8px;">
-          Kosongkan untuk simpan di root Drive. Gunakan "/" untuk subfolder.
+          File akan disimpan di: <strong>[Folder Dasar]/[ID-Produk]-[nama-produk]</strong>
         </div>
       </div>
     </div>
@@ -473,9 +473,13 @@
     <div class="container">
       <div class="section-title">📊 Media Ditemukan</div>
       
-      <div id="productNameSection" class="product-name" style="display: none;">
+      <div id="productInfoSection" class="product-name" style="display: none;">
+        <div class="product-name-label">ID Produk:</div>
+        <div id="productId" style="font-weight: bold; font-size: 14px; margin-bottom: 8px;"></div>
         <div class="product-name-label">Nama Produk:</div>
-        <div id="productName"></div>
+        <div id="productName" style="margin-bottom: 8px;"></div>
+        <div class="product-name-label">Folder Upload:</div>
+        <div id="productFolder" style="color: #43e97b; font-family: monospace; font-size: 11px;"></div>
       </div>
 
       <div class="info">
