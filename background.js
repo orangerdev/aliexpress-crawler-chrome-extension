@@ -8,6 +8,7 @@ let userEmail = null;
 const SCOPES = [
   "https://www.googleapis.com/auth/drive.file",
   "https://www.googleapis.com/auth/userinfo.email",
+  "https://www.googleapis.com/auth/spreadsheets",
 ];
 const REDIRECT_URL = chrome.identity.getRedirectURL();
 
@@ -89,6 +90,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       request.mimeType,
       request.base64Data,
       request.folderPath
+    ).then(sendResponse);
+    return true;
+  }
+
+  if (request.action === "updateSpreadsheet") {
+    updateSpreadsheet(
+      request.productId,
+      request.productName,
+      request.videoLinks,
+      request.imageLinks
     ).then(sendResponse);
     return true;
   }
@@ -362,6 +373,76 @@ async function uploadFileToDrive(filename, mimeType, base64Data, folderPath) {
     };
   } catch (error) {
     console.error("Upload to Drive error:", error);
+    return { success: false, error: error.message };
+  }
+}
+
+// Get Spreadsheet ID from storage
+async function getSpreadsheetId() {
+  const stored = await chrome.storage.local.get(["googleSpreadsheetId"]);
+  return stored.googleSpreadsheetId;
+}
+
+// Update Google Spreadsheet with product data
+async function updateSpreadsheet(
+  productId,
+  productName,
+  videoLinks,
+  imageLinks
+) {
+  try {
+    if (!authToken) {
+      const authCheck = await checkDriveAuth();
+      if (!authCheck.connected) {
+        throw new Error("Not authenticated with Google");
+      }
+    }
+
+    const spreadsheetId = await getSpreadsheetId();
+    if (!spreadsheetId) {
+      throw new Error("Spreadsheet ID belum dikonfigurasi");
+    }
+
+    // Format video links (single link or empty)
+    const videoLink = videoLinks.length > 0 ? videoLinks[0] : "";
+
+    // Format image links (multiple links separated by newline)
+    const imageLinksText = imageLinks.join("\n");
+
+    // Data row: [Product ID, Product Name, Affiliate Link (empty), Video Link, Image Links]
+    const rowData = [
+      productId || "",
+      productName || "",
+      "", // Affiliate link - kosongkan
+      videoLink,
+      imageLinksText,
+    ];
+
+    // Append row to spreadsheet
+    const appendUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/A:E:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`;
+
+    const appendResponse = await fetch(appendUrl, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${authToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        values: [rowData],
+      }),
+    });
+
+    if (!appendResponse.ok) {
+      const error = await appendResponse.json();
+      throw new Error(error.error?.message || "Failed to update spreadsheet");
+    }
+
+    const result = await appendResponse.json();
+    console.log("Spreadsheet updated:", result);
+
+    return { success: true };
+  } catch (error) {
+    console.error("Update spreadsheet error:", error);
     return { success: false, error: error.message };
   }
 }

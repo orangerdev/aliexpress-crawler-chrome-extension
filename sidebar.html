@@ -436,10 +436,23 @@
           <strong>Cara mendapatkan Client ID:</strong><br>
           1. Buka <a href="https://console.cloud.google.com/" target="_blank">Google Cloud Console</a><br>
           2. Buat project baru atau pilih yang ada<br>
-          3. Enable Google Drive API<br>
+          3. Enable Google Drive API & Google Sheets API<br>
           4. Buat OAuth 2.0 Client ID (Web application)<br>
           5. Tambahkan <code>https://&lt;extension-id&gt;.chromiumapp.org/</code> ke Authorized redirect URIs<br>
           6. Copy Client ID dan paste di sini
+        </div>
+        
+        <div class="settings-label" style="margin-top: 15px;">Google Spreadsheet ID:</div>
+        <input type="text" id="spreadsheetIdInput" class="settings-input" placeholder="ID Spreadsheet untuk menyimpan data produk">
+        <div id="spreadsheetIdStatus" class="client-id-status not-configured">
+          <span>⚠️</span> Spreadsheet ID belum dikonfigurasi
+        </div>
+        <button id="saveSpreadsheetId">💾 Simpan Spreadsheet ID</button>
+        <div class="settings-help">
+          <strong>Cara mendapatkan Spreadsheet ID:</strong><br>
+          1. Buka Google Spreadsheet yang ingin digunakan<br>
+          2. Copy ID dari URL: docs.google.com/spreadsheets/d/<strong>[ID]</strong>/edit<br>
+          3. Pastikan spreadsheet dapat diakses oleh akun Google Anda
         </div>
       </div>
     </div>
@@ -493,8 +506,6 @@
         </div>
       </div>
 
-      <button id="uploadImages" disabled>📷 Upload Gambar ke Drive</button>
-      <button id="uploadVideos" disabled>🎥 Upload Video ke Drive</button>
       <button id="uploadAll" disabled>📦 Upload Semua ke Drive</button>
 
       <div id="progressContainer" class="progress-container">

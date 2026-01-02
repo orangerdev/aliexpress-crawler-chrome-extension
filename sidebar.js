@@ -24,18 +24,22 @@ document.addEventListener("DOMContentLoaded", async () => {
   const productFolderEl = document.getElementById("productFolder");
   const imageCountEl = document.getElementById("imageCount");
   const videoCountEl = document.getElementById("videoCount");
-  const uploadImagesBtn = document.getElementById("uploadImages");
-  const uploadVideosBtn = document.getElementById("uploadVideos");
   const uploadAllBtn = document.getElementById("uploadAll");
   const statusEl = document.getElementById("status");
   const progressContainer = document.getElementById("progressContainer");
   const progressFill = document.getElementById("progressFill");
   const progressText = document.getElementById("progressText");
+  const spreadsheetIdInput = document.getElementById("spreadsheetIdInput");
+  const spreadsheetIdStatus = document.getElementById("spreadsheetIdStatus");
+  const saveSpreadsheetIdBtn = document.getElementById("saveSpreadsheetId");
 
   let isConnected = false;
   let hasClientId = false;
+  let hasSpreadsheetId = false;
   let currentTab = null;
   let currentProductFolderName = null; // Store current product folder name
+  let currentProductId = null;
+  let currentRawProductName = null;
 
   // Initialize
   await init();
@@ -43,6 +47,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   async function init() {
     // Load saved client ID
     await loadClientIdStatus();
+
+    // Load saved spreadsheet ID
+    await loadSpreadsheetIdStatus();
 
     // Check Google Drive connection status
     await checkDriveConnection();
@@ -167,6 +174,43 @@ document.addEventListener("DOMContentLoaded", async () => {
     settingsArrow.textContent = "▼";
   });
 
+  // Load and display spreadsheet ID status
+  async function loadSpreadsheetIdStatus() {
+    const saved = await chrome.storage.local.get(["googleSpreadsheetId"]);
+    if (saved.googleSpreadsheetId) {
+      spreadsheetIdInput.value = saved.googleSpreadsheetId;
+      setSpreadsheetIdConfigured(true);
+    } else {
+      setSpreadsheetIdConfigured(false);
+    }
+  }
+
+  function setSpreadsheetIdConfigured(configured) {
+    hasSpreadsheetId = configured;
+    if (configured) {
+      spreadsheetIdStatus.className = "client-id-status configured";
+      spreadsheetIdStatus.innerHTML =
+        "<span>✓</span> Spreadsheet ID sudah dikonfigurasi";
+    } else {
+      spreadsheetIdStatus.className = "client-id-status not-configured";
+      spreadsheetIdStatus.innerHTML =
+        "<span>⚠️</span> Spreadsheet ID belum dikonfigurasi";
+    }
+  }
+
+  // Save Spreadsheet ID
+  saveSpreadsheetIdBtn.addEventListener("click", async () => {
+    const spreadsheetId = spreadsheetIdInput.value.trim();
+    if (!spreadsheetId) {
+      showStatus("Masukkan Spreadsheet ID terlebih dahulu", "error");
+      return;
+    }
+
+    await chrome.storage.local.set({ googleSpreadsheetId: spreadsheetId });
+    setSpreadsheetIdConfigured(true);
+    showStatus("Spreadsheet ID berhasil disimpan!", "success");
+  });
+
   function isAliExpressProductPage(url) {
     try {
       const urlObj = new URL(url);
@@ -267,6 +311,8 @@ document.addEventListener("DOMContentLoaded", async () => {
             // Folder path preview - store and display
             if (results.productFolderName) {
               currentProductFolderName = results.productFolderName;
+              currentProductId = results.productId;
+              currentRawProductName = results.rawProductName;
               const basePath =
                 folderPathInput.value.trim() || "AliExpressMedia";
               productFolderEl.textContent = `${basePath}/${results.productFolderName}`;
@@ -309,15 +355,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     const imageCount = parseInt(imageCountEl.textContent) || 0;
     const videoCount = parseInt(videoCountEl.textContent) || 0;
 
-    uploadImagesBtn.disabled = !isConnected || imageCount === 0;
-    uploadVideosBtn.disabled = !isConnected || videoCount === 0;
     uploadAllBtn.disabled =
       !isConnected || (imageCount === 0 && videoCount === 0);
   }
 
   function disableUploadButtons() {
-    uploadImagesBtn.disabled = true;
-    uploadVideosBtn.disabled = true;
     uploadAllBtn.disabled = true;
   }
 
@@ -383,12 +425,21 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   }
 
-  uploadImagesBtn.addEventListener("click", () => uploadMedia("images"));
-  uploadVideosBtn.addEventListener("click", () => uploadMedia("videos"));
   uploadAllBtn.addEventListener("click", () => uploadMedia("all"));
 
   async function uploadMedia(type) {
-    const folderPath = folderPathInput.value.trim();
+    const folderPath = folderPathInput.value.trim().replace(/\/$/, "");
+
+    // Check if spreadsheet ID is configured
+    if (!hasSpreadsheetId) {
+      showStatus(
+        "Spreadsheet ID belum dikonfigurasi. Buka Pengaturan.",
+        "error"
+      );
+      settingsContent.classList.add("show");
+      settingsArrow.textContent = "▲";
+      return;
+    }
 
     showStatus("Mempersiapkan upload...", "loading");
     showProgress(0);
@@ -408,11 +459,35 @@ document.addEventListener("DOMContentLoaded", async () => {
       });
 
       if (results && results.success) {
-        showProgress(100);
-        showStatus(
-          `✓ Berhasil upload ${results.uploaded} file ke Google Drive`,
-          "success"
-        );
+        showProgress(80);
+        showStatus("Mengupdate spreadsheet...", "loading");
+
+        // Update spreadsheet with the results
+        const spreadsheetResult = await chrome.runtime.sendMessage({
+          action: "updateSpreadsheet",
+          productId: currentProductId,
+          productName: currentRawProductName,
+          videoLinks: results.videoLinks || [],
+          imageLinks: results.imageLinks || [],
+        });
+
+        if (spreadsheetResult && spreadsheetResult.success) {
+          showProgress(100);
+          showStatus(
+            `✓ Berhasil upload ${results.uploaded} file dan update spreadsheet`,
+            "success"
+          );
+        } else {
+          showProgress(100);
+          showStatus(
+            `✓ Upload berhasil (${
+              results.uploaded
+            } file), tapi gagal update spreadsheet: ${
+              spreadsheetResult?.error || "Unknown error"
+            }`,
+            "error"
+          );
+        }
       } else {
         throw new Error(results?.error || "Upload gagal");
       }

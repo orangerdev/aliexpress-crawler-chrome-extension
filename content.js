@@ -40,7 +40,7 @@
       });
     }
 
-    // Extract videos from the slider container as well
+    // Extract videos from the slider container
     if (sliderContainer) {
       sliderContainer
         .querySelectorAll("video source, video")
@@ -51,6 +51,52 @@
           }
         });
     }
+
+    // Extract videos from video elements with AliExpress video class pattern
+    // Class pattern: video--video--[randomId]
+    document.querySelectorAll('[class*="video--video--"]').forEach((video) => {
+      // Get src from video element directly
+      if (video.src && video.src.startsWith("http")) {
+        videos.add(video.src);
+      }
+      if (video.currentSrc && video.currentSrc.startsWith("http")) {
+        videos.add(video.currentSrc);
+      }
+      // Get src from source elements inside video
+      video.querySelectorAll("source").forEach((source) => {
+        if (source.src && source.src.startsWith("http")) {
+          videos.add(source.src);
+        }
+      });
+    });
+
+    // Also search for any video elements in the page that might contain product videos
+    // This catches videos that may be rendered differently
+    document.querySelectorAll("video").forEach((video) => {
+      // Check if it's a product-related video (not ads or other videos)
+      const isProductVideo =
+        video.closest('[class*="slider--"]') ||
+        video.closest('[class*="video--"]') ||
+        video.closest('[class*="product--"]') ||
+        video.closest('[class*="gallery--"]') ||
+        video.closest('[class*="media--"]');
+
+      if (isProductVideo) {
+        // Get src from video element directly
+        if (video.src && video.src.startsWith("http")) {
+          videos.add(video.src);
+        }
+        if (video.currentSrc && video.currentSrc.startsWith("http")) {
+          videos.add(video.currentSrc);
+        }
+        // Get src from source elements inside video
+        video.querySelectorAll("source").forEach((source) => {
+          if (source.src && source.src.startsWith("http")) {
+            videos.add(source.src);
+          }
+        });
+      }
+    });
 
     mediaData.images = Array.from(images);
 
@@ -256,7 +302,7 @@
     const productId = getProductId();
     const rawName = getRawProductName();
     const slug = slugify(rawName);
-    
+
     if (productId) {
       return `${productId}-${slug}`;
     }
@@ -313,11 +359,13 @@
     let productName = getProductName();
     let errors = [];
     let uploaded = 0;
+    let imageLinks = [];
+    let videoLinks = [];
 
     // Auto-generate product folder path
     const productFolderName = getProductFolderName();
-    const folderPath = baseFolderPath 
-      ? `${baseFolderPath.replace(/\/$/, '')}/${productFolderName}`
+    const folderPath = baseFolderPath
+      ? `${baseFolderPath.replace(/\/$/, "")}/${productFolderName}`
       : productFolderName;
 
     // Collect files to upload
@@ -346,6 +394,8 @@
         success: false,
         uploaded: 0,
         errors: ["No media found to upload"],
+        imageLinks: [],
+        videoLinks: [],
       };
     }
 
@@ -397,6 +447,14 @@
 
         if (result.success) {
           uploaded++;
+          // Store the webViewLink based on file type
+          if (result.webViewLink) {
+            if (file.type === "image") {
+              imageLinks.push(result.webViewLink);
+            } else if (file.type === "video") {
+              videoLinks.push(result.webViewLink);
+            }
+          }
         }
 
         // Update progress
@@ -417,6 +475,8 @@
       uploaded: uploaded,
       total: totalFiles,
       errors: errors,
+      imageLinks: imageLinks,
+      videoLinks: videoLinks,
     };
   }
 
