@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AliExpress Media Downloader</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      width: 100%;
+      min-height: 100vh;
+      padding: 20px;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      margin: 0;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+
+    h1 {
+      font-size: 20px;
+      margin-top: 0;
+      margin-bottom: 20px;
+      text-align: center;
+      text-shadow: 1px 1px 2px rgba(0,0,0,0.2);
+    }
+
+    .container {
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      padding: 20px;
+      backdrop-filter: blur(10px);
+      margin-bottom: 15px;
+    }
+
+    .section-title {
+      font-size: 14px;
+      font-weight: bold;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Google Drive Section */
+    .drive-section {
+      margin-bottom: 20px;
+    }
+
+    .drive-status {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px;
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 8px;
+      margin-bottom: 10px;
+    }
+
+    .drive-status.connected {
+      background: rgba(67, 233, 123, 0.2);
+    }
+
+    .drive-status.disconnected {
+      background: rgba(245, 87, 108, 0.2);
+    }
+
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #f5576c;
+    }
+
+    .status-dot.connected {
+      background: #43e97b;
+    }
+
+    .drive-info {
+      flex: 1;
+      font-size: 13px;
+    }
+
+    .drive-email {
+      font-size: 11px;
+      opacity: 0.8;
+    }
+
+    /* Folder Selection */
+    .folder-section {
+      margin-bottom: 15px;
+    }
+
+    .folder-input-group {
+      display: flex;
+      gap: 8px;
+    }
+
+    .folder-input {
+      flex: 1;
+      padding: 10px 12px;
+      border: none;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.2);
+      color: white;
+      font-size: 13px;
+    }
+
+    .folder-input::placeholder {
+      color: rgba(255, 255, 255, 0.6);
+    }
+
+    .folder-input:focus {
+      outline: none;
+      background: rgba(255, 255, 255, 0.3);
+    }
+
+    /* Media Info */
+    .info {
+      background: rgba(255, 255, 255, 0.15);
+      padding: 15px;
+      border-radius: 8px;
+      margin-bottom: 15px;
+    }
+
+    .info-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 0;
+    }
+
+    .info-row:not(:last-child) {
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .info-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+    }
+
+    .info-count {
+      font-size: 18px;
+      font-weight: bold;
+    }
+
+    /* Product Name */
+    .product-name {
+      font-size: 12px;
+      padding: 10px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 6px;
+      margin-bottom: 15px;
+      word-break: break-word;
+      line-height: 1.4;
+    }
+
+    .product-name-label {
+      font-size: 11px;
+      opacity: 0.7;
+      margin-bottom: 5px;
+    }
+
+    /* Buttons */
+    button {
+      width: 100%;
+      padding: 14px;
+      margin-bottom: 10px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    button:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 8px rgba(0,0,0,0.2);
+    }
+
+    button:active:not(:disabled) {
+      transform: translateY(0);
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    #connectDrive {
+      background: linear-gradient(135deg, #4285f4 0%, #34a853 100%);
+      color: white;
+    }
+
+    #disconnectDrive {
+      background: rgba(255, 255, 255, 0.2);
+      color: white;
+      font-size: 12px;
+      padding: 8px;
+    }
+
+    #uploadImages {
+      background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+      color: white;
+    }
+
+    #uploadVideos {
+      background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+      color: white;
+    }
+
+    #uploadAll {
+      background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+      color: white;
+    }
+
+    /* Status */
+    #status {
+      margin-top: 15px;
+      padding: 12px;
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 8px;
+      text-align: center;
+      font-size: 13px;
+      min-height: 20px;
+      display: none;
+    }
+
+    #status.show {
+      display: block;
+    }
+
+    #status.success {
+      background: rgba(67, 233, 123, 0.3);
+    }
+
+    #status.error {
+      background: rgba(245, 87, 108, 0.3);
+    }
+
+    #status.loading {
+      background: rgba(255, 255, 255, 0.2);
+    }
+
+    /* Progress Bar */
+    .progress-container {
+      display: none;
+      margin-top: 15px;
+    }
+
+    .progress-container.show {
+      display: block;
+    }
+
+    .progress-bar {
+      height: 8px;
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+      width: 0%;
+      transition: width 0.3s ease;
+    }
+
+    .progress-text {
+      font-size: 12px;
+      text-align: center;
+      margin-top: 8px;
+      opacity: 0.9;
+    }
+
+    /* Loader */
+    .loader {
+      border: 3px solid rgba(255, 255, 255, 0.3);
+      border-top: 3px solid white;
+      border-radius: 50%;
+      width: 20px;
+      height: 20px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    /* Not on product page message */
+    .not-product-page {
+      text-align: center;
+      padding: 40px 20px;
+    }
+
+    .not-product-page-icon {
+      font-size: 48px;
+      margin-bottom: 15px;
+    }
+
+    .not-product-page-text {
+      font-size: 14px;
+      opacity: 0.9;
+      line-height: 1.5;
+    }
+
+    /* Settings Section */
+    .settings-section {
+      margin-bottom: 15px;
+    }
+
+    .settings-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      padding: 10px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      margin-bottom: 10px;
+    }
+
+    .settings-toggle:hover {
+      background: rgba(255, 255, 255, 0.15);
+    }
+
+    .settings-content {
+      display: none;
+      padding: 15px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+    }
+
+    .settings-content.show {
+      display: block;
+    }
+
+    .settings-label {
+      font-size: 12px;
+      margin-bottom: 8px;
+      opacity: 0.9;
+    }
+
+    .settings-input {
+      width: 100%;
+      padding: 10px 12px;
+      border: none;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.2);
+      color: white;
+      font-size: 12px;
+      font-family: monospace;
+    }
+
+    .settings-input::placeholder {
+      color: rgba(255, 255, 255, 0.5);
+    }
+
+    .settings-input:focus {
+      outline: none;
+      background: rgba(255, 255, 255, 0.3);
+    }
+
+    .settings-help {
+      font-size: 11px;
+      opacity: 0.7;
+      margin-top: 8px;
+      line-height: 1.4;
+    }
+
+    .settings-help a {
+      color: #4facfe;
+      text-decoration: none;
+    }
+
+    .settings-help a:hover {
+      text-decoration: underline;
+    }
+
+    #saveClientId {
+      margin-top: 12px;
+      padding: 10px;
+      font-size: 12px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+
+    .client-id-status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      margin-top: 8px;
+      padding: 8px;
+      border-radius: 6px;
+    }
+
+    .client-id-status.configured {
+      background: rgba(67, 233, 123, 0.2);
+    }
+
+    .client-id-status.not-configured {
+      background: rgba(245, 87, 108, 0.2);
+    }
+  </style>
+</head>
+<body>
+  <h1>🛍️ AliExpress Media Downloader</h1>
+  
+  <div id="mainContent">
+    <!-- Settings Section -->
+    <div class="container settings-section">
+      <div class="settings-toggle" id="settingsToggle">
+        <div class="section-title" style="margin: 0;">⚙️ Pengaturan</div>
+        <span id="settingsArrow">▼</span>
+      </div>
+      <div class="settings-content" id="settingsContent">
+        <div class="settings-label">Google OAuth Client ID:</div>
+        <input type="text" id="clientIdInput" class="settings-input" placeholder="Masukkan Client ID dari Google Cloud Console">
+        <div id="clientIdStatus" class="client-id-status not-configured">
+          <span>⚠️</span> Client ID belum dikonfigurasi
+        </div>
+        <button id="saveClientId">💾 Simpan Client ID</button>
+        <div class="settings-help">
+          <strong>Cara mendapatkan Client ID:</strong><br>
+          1. Buka <a href="https://console.cloud.google.com/" target="_blank">Google Cloud Console</a><br>
+          2. Buat project baru atau pilih yang ada<br>
+          3. Enable Google Drive API<br>
+          4. Buat OAuth 2.0 Client ID (Web application)<br>
+          5. Tambahkan <code>https://&lt;extension-id&gt;.chromiumapp.org/</code> ke Authorized redirect URIs<br>
+          6. Copy Client ID dan paste di sini
+        </div>
+      </div>
+    </div>
+
+    <!-- Google Drive Connection -->
+    <div class="container drive-section">
+      <div class="section-title">☁️ Google Drive</div>
+      <div id="driveStatus" class="drive-status disconnected">
+        <div id="statusDot" class="status-dot"></div>
+        <div class="drive-info">
+          <div id="driveStatusText">Tidak terhubung</div>
+          <div id="driveEmail" class="drive-email"></div>
+        </div>
+      </div>
+      <button id="connectDrive" disabled>🔗 Hubungkan Google Drive</button>
+      <button id="disconnectDrive" style="display: none;">Putuskan Koneksi</button>
+      
+      <!-- Folder Selection -->
+      <div class="folder-section" id="folderSection" style="display: none;">
+        <div class="section-title" style="margin-top: 15px;">📁 Folder Tujuan</div>
+        <div class="folder-input-group">
+          <input type="text" id="folderPath" class="folder-input" placeholder="Contoh: AliExpress/Downloads">
+        </div>
+        <div style="font-size: 11px; opacity: 0.7; margin-top: 8px;">
+          Kosongkan untuk simpan di root Drive. Gunakan "/" untuk subfolder.
+        </div>
+      </div>
+    </div>
+
+    <!-- Media Info -->
+    <div class="container">
+      <div class="section-title">📊 Media Ditemukan</div>
+      
+      <div id="productNameSection" class="product-name" style="display: none;">
+        <div class="product-name-label">Nama Produk:</div>
+        <div id="productName"></div>
+      </div>
+
+      <div class="info">
+        <div class="info-row">
+          <div class="info-label">📷 Gambar</div>
+          <div id="imageCount" class="info-count">0</div>
+        </div>
+        <div class="info-row">
+          <div class="info-label">🎥 Video</div>
+          <div id="videoCount" class="info-count">0</div>
+        </div>
+      </div>
+
+      <button id="uploadImages" disabled>📷 Upload Gambar ke Drive</button>
+      <button id="uploadVideos" disabled>🎥 Upload Video ke Drive</button>
+      <button id="uploadAll" disabled>📦 Upload Semua ke Drive</button>
+
+      <div id="progressContainer" class="progress-container">
+        <div class="progress-bar">
+          <div id="progressFill" class="progress-fill"></div>
+        </div>
+        <div id="progressText" class="progress-text">0%</div>
+      </div>
+
+      <div id="status"></div>
+    </div>
+  </div>
+
+  <div id="notProductPage" class="container not-product-page" style="display: none;">
+    <div class="not-product-page-icon">🛒</div>
+    <div class="not-product-page-text">
+      Silakan buka halaman produk AliExpress untuk menggunakan extension ini.
+    </div>
+  </div>
+
+  <script src="sidebar.js"></script>
+</body>
+</html>

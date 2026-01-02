@@ -184,14 +184,17 @@
 
   // Get product name for filename
   function getProductName() {
-    // Try to get product name from various selectors
+    // Priority: Use the specific AliExpress product title element
+    const productTitle = document.querySelector('[data-pl="product-title"]');
+    if (productTitle && productTitle.textContent.trim()) {
+      return sanitizeFilename(productTitle.textContent.trim());
+    }
+
+    // Fallback: Try other selectors
     const titleSelectors = [
+      'h1[data-pl="product-title"]',
+      '[class*="title--wrap--"] h1',
       "h1",
-      '[class*="title"]',
-      '[class*="Title"]',
-      '[data-pl="product-title"]',
-      ".product-title",
-      ".title",
     ];
 
     for (const selector of titleSelectors) {
@@ -216,7 +219,7 @@
     );
   }
 
-  // Listen for messages from popup
+  // Listen for messages from popup/sidebar
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === "getMediaData") {
       extractMedia();
@@ -224,6 +227,7 @@
         success: true,
         images: mediaData.images,
         videos: mediaData.videos,
+        productName: getProductName(),
       });
       return true;
     }
@@ -239,9 +243,159 @@
             error: error.message,
           });
         });
-      return true; // Keep the message channel open for async response
+      return true;
+    }
+
+    if (request.action === "uploadToDrive") {
+      uploadToDrive(request.type, request.folderPath)
+        .then((result) => {
+          sendResponse(result);
+        })
+        .catch((error) => {
+          sendResponse({
+            success: false,
+            error: error.message,
+          });
+        });
+      return true;
     }
   });
+
+  // Upload media files to Google Drive
+  async function uploadToDrive(type, folderPath) {
+    let productName = getProductName();
+    let errors = [];
+    let uploaded = 0;
+
+    // Collect files to upload
+    const filesToProcess = [];
+
+    if (type === "images" || type === "all") {
+      mediaData.images.forEach((url, index) => {
+        const ext = getExtensionFromUrl(url, "jpg");
+        const filename = `${productName}_image_${index + 1}.${ext}`;
+        filesToProcess.push({ url, filename, type: "image" });
+      });
+    }
+
+    if (type === "videos" || type === "all") {
+      mediaData.videos.forEach((url, index) => {
+        const ext = getExtensionFromUrl(url, "mp4");
+        const filename = `${productName}_video_${index + 1}.${ext}`;
+        filesToProcess.push({ url, filename, type: "video" });
+      });
+    }
+
+    const totalFiles = filesToProcess.length;
+
+    if (totalFiles === 0) {
+      return {
+        success: false,
+        uploaded: 0,
+        errors: ["No media found to upload"],
+      };
+    }
+
+    console.log(`Starting upload of ${totalFiles} files to Google Drive...`);
+
+    // Upload each file
+    for (let i = 0; i < filesToProcess.length; i++) {
+      const file = filesToProcess[i];
+      try {
+        console.log(`Uploading: ${file.filename}`);
+
+        // Update progress
+        const percent = Math.round(((i + 0.5) / totalFiles) * 100);
+        chrome.runtime.sendMessage({
+          action: "uploadProgress",
+          percent: percent,
+          message: `Mengupload ${file.filename}...`,
+        });
+
+        // Fetch file as blob
+        const blob = await fetchAsBlob(file.url);
+        if (!blob) {
+          errors.push(file.filename);
+          continue;
+        }
+
+        // Convert blob to base64
+        const base64 = await blobToBase64(blob);
+
+        // Send to background for upload
+        const result = await new Promise((resolve, reject) => {
+          chrome.runtime.sendMessage(
+            {
+              action: "uploadFileToDrive",
+              filename: file.filename,
+              mimeType: blob.type || getMimeType(file.filename),
+              base64Data: base64,
+              folderPath: folderPath,
+            },
+            (response) => {
+              if (response && response.success) {
+                resolve(response);
+              } else {
+                reject(new Error(response?.error || "Upload failed"));
+              }
+            }
+          );
+        });
+
+        if (result.success) {
+          uploaded++;
+        }
+
+        // Update progress
+        const completePercent = Math.round(((i + 1) / totalFiles) * 100);
+        chrome.runtime.sendMessage({
+          action: "uploadProgress",
+          percent: completePercent,
+          message: `Berhasil upload ${uploaded}/${totalFiles} file`,
+        });
+      } catch (error) {
+        console.error(`Failed to upload ${file.filename}:`, error);
+        errors.push(file.filename);
+      }
+    }
+
+    return {
+      success: true,
+      uploaded: uploaded,
+      total: totalFiles,
+      errors: errors,
+    };
+  }
+
+  // Convert blob to base64
+  function blobToBase64(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64 = reader.result.split(",")[1];
+        resolve(base64);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  // Get MIME type from filename
+  function getMimeType(filename) {
+    const ext = filename.split(".").pop().toLowerCase();
+    const mimeTypes = {
+      jpg: "image/jpeg",
+      jpeg: "image/jpeg",
+      png: "image/png",
+      gif: "image/gif",
+      webp: "image/webp",
+      avif: "image/avif",
+      mp4: "video/mp4",
+      webm: "video/webm",
+      mov: "video/quicktime",
+    };
+    return mimeTypes[ext] || "application/octet-stream";
+  }
 
   // Extract media on page load
   if (document.readyState === "complete") {
