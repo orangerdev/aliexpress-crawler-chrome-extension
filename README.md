@@ -2,6 +2,8 @@
 
 Chrome extension untuk mengunduh gambar dan video produk dari halaman produk AliExpress.
 
+![Extension UI](https://github.com/user-attachments/assets/c126f372-7168-4632-8a89-8a7a31bdebbc)
+
 ## Fitur
 
 - 📷 Download semua gambar produk dari halaman AliExpress

@@ -40,9 +40,10 @@
         if (bigSrc) src = bigSrc;
 
         if (src && src.startsWith('http') && !src.includes('pixel') && !src.includes('transparent')) {
-          // Remove size parameters to get original image
-          src = src.split('_')[0].replace(/\.(jpg|jpeg|png|webp).*$/, '.$1');
-          images.add(src);
+          // Remove size parameters to get original image, but preserve the base URL structure
+          const urlParts = src.split('?')[0]; // Remove query params first
+          const cleanUrl = urlParts.replace(/_([\d]+x[\d]+|[\d]+)(\.(jpg|jpeg|png|webp))$/i, '$2');
+          images.add(cleanUrl);
         }
       });
     });
@@ -162,7 +163,18 @@
 
     if (type === 'images' || type === 'all') {
       mediaData.images.forEach((url, index) => {
-        const ext = url.split('.').pop().split('?')[0].split('_')[0];
+        // Extract extension safely
+        let ext = 'jpg'; // default
+        try {
+          const urlObj = new URL(url);
+          const pathname = urlObj.pathname;
+          const match = pathname.match(/\.(jpg|jpeg|png|webp|gif)$/i);
+          if (match) {
+            ext = match[1].toLowerCase();
+          }
+        } catch (e) {
+          console.warn('Failed to parse image URL:', url);
+        }
         const filename = `${productName}_image_${index + 1}.${ext}`;
         filesToDownload.push({ url, filename });
       });
@@ -170,7 +182,18 @@
 
     if (type === 'videos' || type === 'all') {
       mediaData.videos.forEach((url, index) => {
-        const ext = url.split('.').pop().split('?')[0];
+        // Extract extension safely
+        let ext = 'mp4'; // default
+        try {
+          const urlObj = new URL(url);
+          const pathname = urlObj.pathname;
+          const match = pathname.match(/\.(mp4|webm|mov|avi)$/i);
+          if (match) {
+            ext = match[1].toLowerCase();
+          }
+        } catch (e) {
+          console.warn('Failed to parse video URL:', url);
+        }
         const filename = `${productName}_video_${index + 1}.${ext}`;
         filesToDownload.push({ url, filename });
       });
@@ -183,8 +206,10 @@
       try {
         await downloadFile(file.url, file.filename);
         downloaded++;
-        // Add small delay between downloads to avoid rate limiting
-        await new Promise(resolve => setTimeout(resolve, 100));
+        // Add delay between downloads to avoid rate limiting
+        // Use exponential backoff for larger batches
+        const delay = downloaded < 10 ? 100 : Math.min(500, 100 + downloaded * 10);
+        await new Promise(resolve => setTimeout(resolve, delay));
       } catch (error) {
         console.error(`Failed to download ${file.filename}:`, error);
         errors.push(file.filename);
@@ -226,7 +251,8 @@
     return name
       .replace(/[^a-z0-9\s\-\_]/gi, '')
       .replace(/\s+/g, '_')
-      .substring(0, 50);
+      .replace(/_{2,}/g, '_')
+      .substring(0, 50) || 'aliexpress_product';
   }
 
   // Listen for messages from popup

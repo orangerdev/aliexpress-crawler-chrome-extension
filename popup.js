@@ -11,8 +11,18 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Check if we're on an AliExpress product page
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   
-  if (!tab.url.includes('aliexpress.com/item/') && !tab.url.includes('aliexpress.us/item/')) {
-    showStatus('Silakan buka halaman produk AliExpress', 'error');
+  try {
+    const url = new URL(tab.url);
+    const isAliExpress = (url.hostname.endsWith('aliexpress.com') || url.hostname.endsWith('aliexpress.us'));
+    const isProductPage = url.pathname.includes('/item/');
+    
+    if (!isAliExpress || !isProductPage) {
+      showStatus('Silakan buka halaman produk AliExpress', 'error');
+      disableButtons();
+      return;
+    }
+  } catch (error) {
+    showStatus('URL tidak valid', 'error');
     disableButtons();
     return;
   }
