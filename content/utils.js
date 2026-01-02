@@ -175,9 +175,12 @@ function cleanReviewImageUrl(url) {
 
   // Fix duplicate extensions like .png.png or .jpg.jpg
   cleanUrl = cleanUrl.replace(/\.([a-z]{3,4})\.\1$/i, ".$1");
-  
+
   // Also fix cases like .png.jpg or other mixed double extensions
-  cleanUrl = cleanUrl.replace(/\.(png|jpg|jpeg|gif|webp|avif)\.(png|jpg|jpeg|gif|webp|avif)$/i, ".$1");
+  cleanUrl = cleanUrl.replace(
+    /\.(png|jpg|jpeg|gif|webp|avif)\.(png|jpg|jpeg|gif|webp|avif)$/i,
+    ".$1"
+  );
 
   // Ensure HTTPS
   if (cleanUrl.startsWith("//")) {

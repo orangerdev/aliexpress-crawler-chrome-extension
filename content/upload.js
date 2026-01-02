@@ -7,12 +7,14 @@
  * @returns {Promise<Object>}
  */
 async function uploadMediaToDrive(type, baseFolderPath) {
-  const { getProductName, getProductFolderName } = window.AliExpressProduct;
+  const { getProductName, getProductFolderName, getProductDescription } =
+    window.AliExpressProduct;
   const { fetchAsBlob, blobToBase64, getExtensionFromUrl, getMimeType } =
     window.AliExpressUtils;
   const mediaData = window.AliExpressMedia.getMediaData();
 
   let productName = getProductName();
+  let productDescription = getProductDescription();
   let errors = [];
   let uploaded = 0;
   let imageLinks = [];
@@ -133,6 +135,7 @@ async function uploadMediaToDrive(type, baseFolderPath) {
     errors: errors,
     imageLinks: imageLinks,
     videoLinks: videoLinks,
+    productDescription: productDescription,
   };
 }
 

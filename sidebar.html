@@ -442,8 +442,8 @@
       background: rgba(255, 255, 255, 0.2);
     }
 
-    /* Extract Reviews Button */
-    #extractReviews {
+    /* Extract and Upload Reviews Button */
+    #extractAndUploadReviews {
       background: linear-gradient(135deg, #f5af19 0%, #f12711 100%);
       color: white;
     }
@@ -549,6 +549,10 @@
           <div class="info-label">🎥 Video</div>
           <div id="videoCount" class="info-count">0</div>
         </div>
+        <div class="info-row">
+          <div class="info-label">📝 Deskripsi</div>
+          <div id="descriptionStatus" class="info-count" style="font-size: 12px;">❌</div>
+        </div>
       </div>
 
       <button id="uploadAll" disabled>📦 Upload Semua ke Drive</button>
@@ -602,8 +606,7 @@
         <div id="totalReviews" style="font-size: 12px;"></div>
       </div>
 
-      <button id="extractReviews">🔍 Ekstrak Semua Review</button>
-      <button id="uploadReviews" disabled style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">☁️ Upload Review ke Drive</button>
+      <button id="extractAndUploadReviews">🔍 Ekstrak & Upload Review</button>
 
       <div id="reviewProgressContainer" class="progress-container">
         <div class="progress-bar">

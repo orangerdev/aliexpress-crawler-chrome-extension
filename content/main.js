@@ -35,6 +35,7 @@
       getProductName,
       getRawProductName,
       getProductFolderName,
+      getProductDescription,
     } = window.AliExpressProduct;
     const {
       extractAllReviews,
@@ -61,6 +62,7 @@
           productId: getProductId(),
           rawProductName: getRawProductName(),
           productFolderName: getProductFolderName(),
+          productDescription: getProductDescription(),
         });
         return true;
       }
@@ -76,6 +78,31 @@
               error: error.message,
             });
           });
+        return true;
+      }
+
+      // Scroll to description section
+      if (request.action === "scrollToDescription") {
+        try {
+          // Try to find and click on the description tab/nav first
+          const descNav = document.querySelector('#nav-description, [data-pl="product-description"], [class*="nav--item"][class*="description"]');
+          if (descNav) {
+            descNav.click();
+          }
+          
+          // Then scroll to the description section
+          const descSection = document.querySelector('[class*="description--product-description--"], .product-description, #product-description');
+          if (descSection) {
+            descSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          } else {
+            // Fallback: scroll down the page to trigger lazy loading
+            window.scrollTo({ top: document.body.scrollHeight * 0.6, behavior: 'smooth' });
+          }
+          
+          sendResponse({ success: true });
+        } catch (error) {
+          sendResponse({ success: false, error: error.message });
+        }
         return true;
       }
 

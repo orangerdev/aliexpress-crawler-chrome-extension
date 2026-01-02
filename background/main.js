@@ -70,7 +70,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       request.productId,
       request.productName,
       request.videoLinks,
-      request.imageLinks
+      request.imageLinks,
+      request.productDescription
     ).then(sendResponse);
     return true;
   }

@@ -16,6 +16,7 @@ async function getSpreadsheetId() {
  * @param {string} productName - Product name
  * @param {Array} videoLinks - Array of video links
  * @param {Array} imageLinks - Array of image links
+ * @param {string} productDescription - Product description text
  * @returns {Promise<Object>}
  */
 async function updateSpreadsheet(
@@ -23,7 +24,8 @@ async function updateSpreadsheet(
   productId,
   productName,
   videoLinks,
-  imageLinks
+  imageLinks,
+  productDescription
 ) {
   const { checkDriveAuth, getAuthToken } = self.BackgroundAuth;
 
@@ -52,19 +54,21 @@ async function updateSpreadsheet(
     // Format image links (multiple links separated by newline)
     const imageLinksText = imageLinks.join("\n");
 
-    // Data row: [Product ID, Product Name, Affiliate Link (empty), Video Link, Image Links]
+    // Data row: [Empty (for increment), Product ID, Product Name, Affiliate Link (empty), Video Link, Image Links, Description]
     const rowData = [
-      productId || "",
-      productName || "",
-      "", // Affiliate link - kosongkan
-      videoLink,
-      imageLinksText,
+      "", // Column A - kosongkan untuk increment number
+      productId || "", // Column B - Product ID
+      productName || "", // Column C - Product Name
+      "", // Column D - Affiliate link - kosongkan
+      videoLink, // Column E - Video Link
+      imageLinksText, // Column F - Image Links
+      productDescription || "", // Column G - Description
     ];
 
     // Append row to spreadsheet with sheet name
     const appendUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(
       sheet
-    )}!A:E:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`;
+    )}!A:G:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`;
 
     const appendResponse = await fetch(appendUrl, {
       method: "POST",

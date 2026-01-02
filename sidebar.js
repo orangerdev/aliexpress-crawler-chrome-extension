@@ -24,6 +24,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const productFolderEl = document.getElementById("productFolder");
   const imageCountEl = document.getElementById("imageCount");
   const videoCountEl = document.getElementById("videoCount");
+  const descriptionStatusEl = document.getElementById("descriptionStatus");
   const uploadAllBtn = document.getElementById("uploadAll");
   const statusEl = document.getElementById("status");
   const progressContainer = document.getElementById("progressContainer");
@@ -42,8 +43,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   const reviewSummary = document.getElementById("reviewSummary");
   const averageRatingEl = document.getElementById("averageRating");
   const totalReviewsEl = document.getElementById("totalReviews");
-  const extractReviewsBtn = document.getElementById("extractReviews");
-  const uploadReviewsBtn = document.getElementById("uploadReviews");
+  const extractAndUploadReviewsBtn = document.getElementById(
+    "extractAndUploadReviews"
+  );
   const reviewProgressContainer = document.getElementById(
     "reviewProgressContainer"
   );
@@ -309,9 +311,8 @@ document.addEventListener("DOMContentLoaded", async () => {
       disconnectDriveBtn.style.display = "block";
       folderSection.style.display = "block";
       updateUploadButtons();
-      // Update review upload button if reviews are extracted
-      const reviewCount = parseInt(reviewCountEl.textContent) || 0;
-      uploadReviewsBtn.disabled = reviewCount === 0;
+      // Update review upload button state based on connection
+      extractAndUploadReviewsBtn.disabled = false;
     } else {
       driveStatus.className = "drive-status disconnected";
       statusDot.className = "status-dot";
@@ -322,7 +323,8 @@ document.addEventListener("DOMContentLoaded", async () => {
       disconnectDriveBtn.style.display = "none";
       folderSection.style.display = "none";
       disableUploadButtons();
-      uploadReviewsBtn.disabled = true;
+      // Disable review button when not connected
+      extractAndUploadReviewsBtn.disabled = false; // Keep enabled, will check connection on click
     }
   }
 
@@ -348,6 +350,15 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (results && results.success) {
           imageCountEl.textContent = results.images.length;
           videoCountEl.textContent = results.videos.length;
+          
+          // Update description status
+          if (results.productDescription && results.productDescription.trim().length > 0) {
+            descriptionStatusEl.textContent = "✅";
+            descriptionStatusEl.title = `Deskripsi tersedia (${results.productDescription.length} karakter)`;
+          } else {
+            descriptionStatusEl.textContent = "❌";
+            descriptionStatusEl.title = "Deskripsi belum dimuat. Scroll ke bagian deskripsi produk.";
+          }
 
           // Display product info
           if (results.productId || results.rawProductName) {
@@ -508,7 +519,35 @@ document.addEventListener("DOMContentLoaded", async () => {
         currentWindow: true,
       });
 
+      // Step 1: Scroll to description section to load it
+      showStatus("Memuat deskripsi produk...", "loading");
+      showProgress(5);
+      
+      await chrome.tabs.sendMessage(tab.id, {
+        action: "scrollToDescription",
+      });
+      
+      // Wait for description to load (3 seconds)
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      
+      // Refresh media data to get updated description
+      showStatus("Mengambil data produk...", "loading");
+      showProgress(10);
+      
+      const mediaData = await chrome.tabs.sendMessage(tab.id, {
+        action: "getMediaData",
+      });
+      
+      // Update description status
+      if (mediaData && mediaData.productDescription && mediaData.productDescription.trim().length > 0) {
+        descriptionStatusEl.textContent = "✅";
+        descriptionStatusEl.title = `Deskripsi tersedia (${mediaData.productDescription.length} karakter)`;
+      }
+      
+      showProgress(15);
+
       // Tell content script to prepare and upload
+      showStatus("Mengupload file ke Drive...", "loading");
       const results = await chrome.tabs.sendMessage(tab.id, {
         action: "uploadToDrive",
         type: type,
@@ -533,6 +572,7 @@ document.addEventListener("DOMContentLoaded", async () => {
           productName: currentRawProductName,
           videoLinks: results.videoLinks || [],
           imageLinks: results.imageLinks || [],
+          productDescription: results.productDescription || "",
         });
 
         if (spreadsheetResult && spreadsheetResult.success) {
@@ -597,17 +637,28 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
-  // Review extraction handlers
-  extractReviewsBtn.addEventListener("click", async () => {
+  // Combined review extraction and upload handler
+  extractAndUploadReviewsBtn.addEventListener("click", async () => {
+    if (!isConnected) {
+      showReviewStatus("Hubungkan ke Google Drive terlebih dahulu", "error");
+      return;
+    }
+
     // Get filter values from inputs
     const minWords = parseInt(minWordsInput.value) || 20;
     const maxReviews = parseInt(maxReviewsInput.value) || 20;
+    const folderPath = folderPathInput.value.trim().replace(/\/$/, "");
+
+    // Get sheet name from storage
+    const sheetConfig = await chrome.storage.local.get(["reviewSheetName"]);
+    const reviewSheetName = sheetConfig.reviewSheetName || "REVIEW";
 
     showReviewStatus(
       `Membuka popup review (min ${minWords} kata, maks ${maxReviews} review)...`,
       "loading"
     );
-    extractReviewsBtn.disabled = true;
+    showReviewProgress(0);
+    extractAndUploadReviewsBtn.disabled = true;
 
     try {
       const [tab] = await chrome.tabs.query({
@@ -615,7 +666,11 @@ document.addEventListener("DOMContentLoaded", async () => {
         currentWindow: true,
       });
 
-      const results = await chrome.tabs.sendMessage(tab.id, {
+      // Step 1: Extract reviews
+      showReviewStatus("Mengekstrak review...", "loading");
+      showReviewProgress(10);
+
+      const extractResults = await chrome.tabs.sendMessage(tab.id, {
         action: "extractReviews",
         openPopup: true,
         maxScrolls: 30,
@@ -624,83 +679,52 @@ document.addEventListener("DOMContentLoaded", async () => {
         maxReviews: maxReviews,
       });
 
-      if (results && results.success) {
-        reviewCountEl.textContent = results.reviews.length;
-        reviewPhotoCountEl.textContent = results.reviewPhotos.length;
-
-        // Show summary
-        if (results.reviews.length > 0) {
-          reviewSummary.style.display = "block";
-          averageRatingEl.textContent = `⭐ ${results.averageRating.toFixed(
-            1
-          )}`;
-          totalReviewsEl.textContent = `${results.totalCount} total ratings`;
-
-          // Enable buttons
-          uploadReviewsBtn.disabled = !isConnected;
-        }
-
-        showReviewStatus(
-          `✓ Berhasil ekstrak ${results.reviews.length} review dengan ${results.reviewPhotos.length} foto`,
-          "success"
-        );
-      } else {
-        throw new Error(results?.error || "Gagal mengekstrak review");
+      if (!extractResults || !extractResults.success) {
+        throw new Error(extractResults?.error || "Gagal mengekstrak review");
       }
-    } catch (error) {
-      console.error("Extract reviews error:", error);
-      showReviewStatus(`Error: ${error.message}`, "error");
-    } finally {
-      extractReviewsBtn.disabled = false;
-    }
-  });
 
-  uploadReviewsBtn.addEventListener("click", async () => {
-    if (!isConnected) {
-      showReviewStatus("Hubungkan ke Google Drive terlebih dahulu", "error");
-      return;
-    }
+      // Update UI with extraction results
+      reviewCountEl.textContent = extractResults.reviews.length;
+      reviewPhotoCountEl.textContent = extractResults.reviewPhotos.length;
 
-    const folderPath = folderPathInput.value.trim().replace(/\/$/, "");
+      if (extractResults.reviews.length > 0) {
+        reviewSummary.style.display = "block";
+        averageRatingEl.textContent = `⭐ ${extractResults.averageRating.toFixed(
+          1
+        )}`;
+        totalReviewsEl.textContent = `${extractResults.totalCount} total ratings`;
+      }
 
-    // Get sheet name from storage
-    const sheetConfig = await chrome.storage.local.get(["reviewSheetName"]);
-    const reviewSheetName = sheetConfig.reviewSheetName || "REVIEW";
+      showReviewStatus(
+        `Berhasil ekstrak ${extractResults.reviews.length} review. Mengupload ke Drive...`,
+        "loading"
+      );
+      showReviewProgress(40);
 
-    showReviewStatus("Mempersiapkan upload review...", "loading");
-    showReviewProgress(0);
-    uploadReviewsBtn.disabled = true;
-
-    try {
-      const [tab] = await chrome.tabs.query({
-        active: true,
-        currentWindow: true,
-      });
-
-      const results = await chrome.tabs.sendMessage(tab.id, {
+      // Step 2: Upload reviews to Drive
+      const uploadResults = await chrome.tabs.sendMessage(tab.id, {
         action: "uploadReviewsToDrive",
         folderPath: folderPath,
         includePhotos: true,
         reviewSheetName: reviewSheetName,
       });
 
-      if (results && results.success) {
+      if (uploadResults && uploadResults.success) {
         showReviewProgress(100);
         showReviewStatus(
-          `✓ Berhasil upload ${results.uploaded} file review ke Drive`,
+          `✓ Berhasil ekstrak ${extractResults.reviews.length} review dan upload ${uploadResults.uploaded} file ke Drive`,
           "success"
         );
       } else {
-        throw new Error(results?.error || "Upload gagal");
+        throw new Error(uploadResults?.error || "Upload gagal");
       }
     } catch (error) {
-      console.error("Upload reviews error:", error);
+      console.error("Extract and upload reviews error:", error);
       showReviewStatus(`Error: ${error.message}`, "error");
     } finally {
       setTimeout(() => {
         hideReviewProgress();
-        uploadReviewsBtn.disabled =
-          !isConnected || parseInt(reviewCountEl.textContent) === 0;
+        extractAndUploadReviewsBtn.disabled = false;
       }, 2000);
     }
   });
