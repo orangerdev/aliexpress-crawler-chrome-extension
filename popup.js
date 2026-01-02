@@ -13,7 +13,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   
   try {
     const url = new URL(tab.url);
-    const isAliExpress = (url.hostname.endsWith('aliexpress.com') || url.hostname.endsWith('aliexpress.us'));
+    // Validate that hostname is exactly aliexpress.com or a subdomain of it (not a suffix of another domain)
+    const hostname = url.hostname.toLowerCase();
+    const isAliExpress = (hostname === 'aliexpress.com' || 
+                          hostname === 'www.aliexpress.com' || 
+                          hostname.endsWith('.aliexpress.com') ||
+                          hostname === 'aliexpress.us' ||
+                          hostname === 'www.aliexpress.us' ||
+                          hostname.endsWith('.aliexpress.us'));
     const isProductPage = url.pathname.includes('/item/');
     
     if (!isAliExpress || !isProductPage) {
