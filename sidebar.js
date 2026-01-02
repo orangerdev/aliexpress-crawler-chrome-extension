@@ -32,6 +32,26 @@ document.addEventListener("DOMContentLoaded", async () => {
   const spreadsheetIdInput = document.getElementById("spreadsheetIdInput");
   const spreadsheetIdStatus = document.getElementById("spreadsheetIdStatus");
   const saveSpreadsheetIdBtn = document.getElementById("saveSpreadsheetId");
+  const productSheetInput = document.getElementById("productSheetInput");
+  const reviewSheetInput = document.getElementById("reviewSheetInput");
+  const saveSheetNamesBtn = document.getElementById("saveSheetNames");
+
+  // Review elements
+  const reviewCountEl = document.getElementById("reviewCount");
+  const reviewPhotoCountEl = document.getElementById("reviewPhotoCount");
+  const reviewSummary = document.getElementById("reviewSummary");
+  const averageRatingEl = document.getElementById("averageRating");
+  const totalReviewsEl = document.getElementById("totalReviews");
+  const extractReviewsBtn = document.getElementById("extractReviews");
+  const uploadReviewsBtn = document.getElementById("uploadReviews");
+  const reviewProgressContainer = document.getElementById(
+    "reviewProgressContainer"
+  );
+  const reviewProgressFill = document.getElementById("reviewProgressFill");
+  const reviewProgressText = document.getElementById("reviewProgressText");
+  const reviewStatusEl = document.getElementById("reviewStatus");
+  const minWordsInput = document.getElementById("minWordsInput");
+  const maxReviewsInput = document.getElementById("maxReviewsInput");
 
   let isConnected = false;
   let hasClientId = false;
@@ -50,6 +70,9 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     // Load saved spreadsheet ID
     await loadSpreadsheetIdStatus();
+
+    // Load saved sheet names
+    await loadSheetNames();
 
     // Check Google Drive connection status
     await checkDriveConnection();
@@ -211,6 +234,36 @@ document.addEventListener("DOMContentLoaded", async () => {
     showStatus("Spreadsheet ID berhasil disimpan!", "success");
   });
 
+  // Load sheet names
+  async function loadSheetNames() {
+    const saved = await chrome.storage.local.get([
+      "productSheetName",
+      "reviewSheetName",
+    ]);
+    if (saved.productSheetName) {
+      productSheetInput.value = saved.productSheetName;
+    } else {
+      productSheetInput.value = "PRODUCT";
+    }
+    if (saved.reviewSheetName) {
+      reviewSheetInput.value = saved.reviewSheetName;
+    } else {
+      reviewSheetInput.value = "REVIEW";
+    }
+  }
+
+  // Save Sheet Names
+  saveSheetNamesBtn.addEventListener("click", async () => {
+    const productSheet = productSheetInput.value.trim() || "PRODUCT";
+    const reviewSheet = reviewSheetInput.value.trim() || "REVIEW";
+
+    await chrome.storage.local.set({
+      productSheetName: productSheet,
+      reviewSheetName: reviewSheet,
+    });
+    showStatus("Nama sheet berhasil disimpan!", "success");
+  });
+
   function isAliExpressProductPage(url) {
     try {
       const urlObj = new URL(url);
@@ -256,6 +309,9 @@ document.addEventListener("DOMContentLoaded", async () => {
       disconnectDriveBtn.style.display = "block";
       folderSection.style.display = "block";
       updateUploadButtons();
+      // Update review upload button if reviews are extracted
+      const reviewCount = parseInt(reviewCountEl.textContent) || 0;
+      uploadReviewsBtn.disabled = reviewCount === 0;
     } else {
       driveStatus.className = "drive-status disconnected";
       statusDot.className = "status-dot";
@@ -266,6 +322,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       disconnectDriveBtn.style.display = "none";
       folderSection.style.display = "none";
       disableUploadButtons();
+      uploadReviewsBtn.disabled = true;
     }
   }
 
@@ -462,9 +519,16 @@ document.addEventListener("DOMContentLoaded", async () => {
         showProgress(80);
         showStatus("Mengupdate spreadsheet...", "loading");
 
+        // Get sheet name from storage
+        const sheetConfig = await chrome.storage.local.get([
+          "productSheetName",
+        ]);
+        const sheetName = sheetConfig.productSheetName || "PRODUCT";
+
         // Update spreadsheet with the results
         const spreadsheetResult = await chrome.runtime.sendMessage({
           action: "updateSpreadsheet",
+          sheetName: sheetName,
           productId: currentProductId,
           productName: currentRawProductName,
           videoLinks: results.videoLinks || [],
@@ -525,5 +589,134 @@ document.addEventListener("DOMContentLoaded", async () => {
         showStatus(request.message, "loading");
       }
     }
+    if (request.action === "reviewScrollProgress") {
+      showReviewStatus(request.message, "loading");
+      if (request.count) {
+        reviewCountEl.textContent = request.count;
+      }
+    }
   });
+
+  // Review extraction handlers
+  extractReviewsBtn.addEventListener("click", async () => {
+    // Get filter values from inputs
+    const minWords = parseInt(minWordsInput.value) || 20;
+    const maxReviews = parseInt(maxReviewsInput.value) || 20;
+
+    showReviewStatus(
+      `Membuka popup review (min ${minWords} kata, maks ${maxReviews} review)...`,
+      "loading"
+    );
+    extractReviewsBtn.disabled = true;
+
+    try {
+      const [tab] = await chrome.tabs.query({
+        active: true,
+        currentWindow: true,
+      });
+
+      const results = await chrome.tabs.sendMessage(tab.id, {
+        action: "extractReviews",
+        openPopup: true,
+        maxScrolls: 30,
+        autoClose: false,
+        minWords: minWords,
+        maxReviews: maxReviews,
+      });
+
+      if (results && results.success) {
+        reviewCountEl.textContent = results.reviews.length;
+        reviewPhotoCountEl.textContent = results.reviewPhotos.length;
+
+        // Show summary
+        if (results.reviews.length > 0) {
+          reviewSummary.style.display = "block";
+          averageRatingEl.textContent = `⭐ ${results.averageRating.toFixed(
+            1
+          )}`;
+          totalReviewsEl.textContent = `${results.totalCount} total ratings`;
+
+          // Enable buttons
+          uploadReviewsBtn.disabled = !isConnected;
+        }
+
+        showReviewStatus(
+          `✓ Berhasil ekstrak ${results.reviews.length} review dengan ${results.reviewPhotos.length} foto`,
+          "success"
+        );
+      } else {
+        throw new Error(results?.error || "Gagal mengekstrak review");
+      }
+    } catch (error) {
+      console.error("Extract reviews error:", error);
+      showReviewStatus(`Error: ${error.message}`, "error");
+    } finally {
+      extractReviewsBtn.disabled = false;
+    }
+  });
+
+  uploadReviewsBtn.addEventListener("click", async () => {
+    if (!isConnected) {
+      showReviewStatus("Hubungkan ke Google Drive terlebih dahulu", "error");
+      return;
+    }
+
+    const folderPath = folderPathInput.value.trim().replace(/\/$/, "");
+
+    // Get sheet name from storage
+    const sheetConfig = await chrome.storage.local.get(["reviewSheetName"]);
+    const reviewSheetName = sheetConfig.reviewSheetName || "REVIEW";
+
+    showReviewStatus("Mempersiapkan upload review...", "loading");
+    showReviewProgress(0);
+    uploadReviewsBtn.disabled = true;
+
+    try {
+      const [tab] = await chrome.tabs.query({
+        active: true,
+        currentWindow: true,
+      });
+
+      const results = await chrome.tabs.sendMessage(tab.id, {
+        action: "uploadReviewsToDrive",
+        folderPath: folderPath,
+        includePhotos: true,
+        reviewSheetName: reviewSheetName,
+      });
+
+      if (results && results.success) {
+        showReviewProgress(100);
+        showReviewStatus(
+          `✓ Berhasil upload ${results.uploaded} file review ke Drive`,
+          "success"
+        );
+      } else {
+        throw new Error(results?.error || "Upload gagal");
+      }
+    } catch (error) {
+      console.error("Upload reviews error:", error);
+      showReviewStatus(`Error: ${error.message}`, "error");
+    } finally {
+      setTimeout(() => {
+        hideReviewProgress();
+        uploadReviewsBtn.disabled =
+          !isConnected || parseInt(reviewCountEl.textContent) === 0;
+      }, 2000);
+    }
+  });
+
+  function showReviewStatus(message, type) {
+    reviewStatusEl.textContent = message;
+    reviewStatusEl.className = "show " + type;
+  }
+
+  function showReviewProgress(percent) {
+    reviewProgressContainer.classList.add("show");
+    reviewProgressFill.style.width = percent + "%";
+    reviewProgressText.textContent = Math.round(percent) + "%";
+  }
+
+  function hideReviewProgress() {
+    reviewProgressContainer.classList.remove("show");
+  }
 });

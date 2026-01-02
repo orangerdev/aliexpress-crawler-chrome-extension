@@ -1,0 +1,1247 @@
+// content.js - Extracts media from AliExpress product pages and handles downloads
+
+(function () {
+  "use strict";
+
+  // Storage for extracted media
+  let mediaData = {
+    images: [],
+    videos: [],
+  };
+
+  // Storage for extracted reviews
+  let reviewData = {
+    reviews: [],
+    totalCount: 0,
+    averageRating: 0,
+  };
+
+  // Click "View more" button to open review popup
+  async function openReviewPopup() {
+    // Find the "View more" button for reviews
+    const viewMoreButtons = document.querySelectorAll(
+      "button.comet-v2-btn-important"
+    );
+    let reviewButton = null;
+
+    for (const btn of viewMoreButtons) {
+      const spanText =
+        btn.querySelector("span")?.textContent?.toLowerCase() || "";
+      if (spanText.includes("view more") || spanText.includes("lihat lebih")) {
+        reviewButton = btn;
+        break;
+      }
+    }
+
+    if (!reviewButton) {
+      console.log('Review "View more" button not found');
+      return false;
+    }
+
+    // Click the button to open the popup
+    reviewButton.click();
+
+    // Wait for the modal to appear
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+
+    return true;
+  }
+
+  // Close the review popup
+  function closeReviewPopup() {
+    const closeBtn = document.querySelector(".comet-v2-modal-close");
+    if (closeBtn) {
+      closeBtn.click();
+    }
+  }
+
+  // Wait for element to appear
+  function waitForElement(selector, timeout = 5000) {
+    return new Promise((resolve, reject) => {
+      const element = document.querySelector(selector);
+      if (element) {
+        resolve(element);
+        return;
+      }
+
+      const observer = new MutationObserver((mutations, obs) => {
+        const element = document.querySelector(selector);
+        if (element) {
+          obs.disconnect();
+          resolve(element);
+        }
+      });
+
+      observer.observe(document.body, {
+        childList: true,
+        subtree: true,
+      });
+
+      setTimeout(() => {
+        observer.disconnect();
+        reject(new Error(`Element ${selector} not found within ${timeout}ms`));
+      }, timeout);
+    });
+  }
+
+  // Extract reviews from the review popup/modal
+  function extractReviewsFromPopup() {
+    const reviews = [];
+
+    // Find the modal content
+    const modalContent = document.querySelector(".comet-v2-modal-content");
+    if (!modalContent) {
+      console.log("Modal content not found, trying page reviews");
+      return extractReviewsFromPage();
+    }
+
+    // Get overall rating info
+    const ratingEl = modalContent.querySelector(
+      ".title--title--MFuMdl3 span:nth-child(3)"
+    );
+    const ratingCountEl = modalContent.querySelector(".title--rating--wzOw1ph");
+
+    if (ratingEl) {
+      reviewData.averageRating = parseFloat(ratingEl.textContent) || 0;
+    }
+    if (ratingCountEl) {
+      const match = ratingCountEl.textContent.match(/(\d+)/);
+      reviewData.totalCount = match ? parseInt(match[1]) : 0;
+    }
+
+    // Find all review items
+    const reviewItems = modalContent.querySelectorAll(
+      ".list--itemBox--je_KNzb"
+    );
+
+    reviewItems.forEach((item, index) => {
+      const review = extractSingleReview(item, index);
+      if (review) {
+        reviews.push(review);
+      }
+    });
+
+    return reviews;
+  }
+
+  // Extract reviews from the main page (if not in popup)
+  function extractReviewsFromPage() {
+    const reviews = [];
+
+    // Find review items on the page
+    const reviewItems = document.querySelectorAll(".list--itemBox--je_KNzb");
+
+    reviewItems.forEach((item, index) => {
+      const review = extractSingleReview(item, index);
+      if (review) {
+        reviews.push(review);
+      }
+    });
+
+    return reviews;
+  }
+
+  // Extract data from a single review item
+  function extractSingleReview(item, index) {
+    try {
+      // Extract star rating (count filled stars)
+      const starIcons = item.querySelectorAll(".comet-icon-starreviewfilled");
+      const rating = starIcons.length;
+
+      // Extract SKU/variant info
+      const skuEl = item.querySelector(".list--itemSku--idEQSGC");
+      const sku = skuEl ? skuEl.textContent.trim() : "";
+
+      // Extract main review text
+      const reviewTextEl = item.querySelector(".list--itemReview--d9Z9Z5Z");
+      const reviewText = reviewTextEl ? reviewTextEl.textContent.trim() : "";
+
+      // Extract additional review if exists
+      let additionalReview = "";
+      const additionalReviewContainer = item.querySelector(
+        '.list--itemContentTopLeft--jv7Zzf1 > div[style*="margin-top"]'
+      );
+      if (additionalReviewContainer) {
+        const additionalSpan = additionalReviewContainer.querySelector(
+          'span[style*="font-weight"]'
+        );
+        if (additionalSpan) {
+          additionalReview = additionalSpan.textContent.trim();
+        }
+      }
+
+      // Extract date and username
+      const infoEl = item.querySelector(".list--itemInfo--VEcgSFh span");
+      let username = "";
+      let date = "";
+      if (infoEl) {
+        const infoText = infoEl.textContent.trim();
+        const parts = infoText.split("|").map((p) => p.trim());
+        if (parts.length >= 2) {
+          username = parts[0];
+          date = parts[1];
+        } else {
+          username = infoText;
+        }
+      }
+
+      // Extract helpful count
+      const helpfulEl = item.querySelector(".list--itemHelpText--BfmXmgh");
+      let helpfulCount = 0;
+      if (helpfulEl) {
+        const match = helpfulEl.textContent.match(/\((\d+)\)/);
+        helpfulCount = match ? parseInt(match[1]) : 0;
+      }
+
+      // Extract photos
+      const photos = [];
+      const thumbnailContainer = item.querySelector(
+        ".list--itemThumbnails--TtUDHhl"
+      );
+      if (thumbnailContainer) {
+        const thumbnailImages = thumbnailContainer.querySelectorAll("img");
+        thumbnailImages.forEach((img) => {
+          let src = img.src || img.dataset.src;
+          if (src) {
+            // Clean and get full-size image URL
+            // Convert thumbnail URL to full-size URL by removing size suffix
+            // e.g., _220x220.png_.avif -> _.avif or remove entirely
+            src = cleanReviewImageUrl(src);
+            photos.push(src);
+          }
+        });
+      }
+
+      // Extract user avatar
+      const avatarEl = item.querySelector(".list--itemPhoto--SQWM7vp img");
+      const avatar = avatarEl ? avatarEl.src : "";
+
+      return {
+        index: index + 1,
+        username,
+        date,
+        rating,
+        sku,
+        reviewText,
+        additionalReview,
+        helpfulCount,
+        photos,
+        avatar,
+      };
+    } catch (error) {
+      console.error("Error extracting review:", error);
+      return null;
+    }
+  }
+
+  // Clean review image URL to get full-size version
+  function cleanReviewImageUrl(url) {
+    if (!url) return url;
+
+    // Remove size suffix like _220x220.png_.avif or _220x220.jpg_.avif
+    // Keep the original format without size restrictions
+    let cleanUrl = url.replace(/_\d+x\d+\.([a-z]+)_\.(avif|webp)/i, ".$1");
+
+    // Also try to get higher resolution version
+    cleanUrl = cleanUrl.replace(/_\d+x\d+q?\d*/, "");
+
+    // Ensure HTTPS
+    if (cleanUrl.startsWith("//")) {
+      cleanUrl = "https:" + cleanUrl;
+    } else if (cleanUrl.startsWith("http://")) {
+      cleanUrl = cleanUrl.replace("http://", "https://");
+    }
+
+    return cleanUrl;
+  }
+
+  // Scroll within the modal to load more reviews
+  async function scrollToLoadMoreReviews(maxScrolls = 10) {
+    const modalBody = document.querySelector(".comet-v2-modal-body");
+    if (!modalBody) return;
+
+    let previousReviewCount = 0;
+    let scrollCount = 0;
+    let noNewReviewsCount = 0;
+
+    while (scrollCount < maxScrolls && noNewReviewsCount < 3) {
+      // Get current review count
+      const currentReviewCount = document.querySelectorAll(
+        ".list--itemBox--je_KNzb"
+      ).length;
+
+      // Check if new reviews were loaded
+      if (currentReviewCount === previousReviewCount) {
+        noNewReviewsCount++;
+      } else {
+        noNewReviewsCount = 0;
+      }
+
+      previousReviewCount = currentReviewCount;
+
+      // Scroll down
+      modalBody.scrollTop = modalBody.scrollHeight;
+
+      // Wait for content to load
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
+      scrollCount++;
+
+      // Send progress update
+      chrome.runtime.sendMessage({
+        action: "reviewScrollProgress",
+        message: `Memuat review... (${currentReviewCount} reviews loaded)`,
+        count: currentReviewCount,
+      });
+    }
+  }
+
+  // Main function to extract all reviews
+  async function extractAllReviews(options = {}) {
+    const { openPopup = true, maxScrolls = 20, autoClose = false } = options;
+
+    try {
+      // Reset review data
+      reviewData.reviews = [];
+
+      if (openPopup) {
+        // Open the review popup
+        const popupOpened = await openReviewPopup();
+        if (!popupOpened) {
+          // Try extracting from page if popup can't be opened
+          reviewData.reviews = extractReviewsFromPage();
+          return reviewData;
+        }
+
+        // Wait for modal content to fully load
+        await waitForElement(".list--itemBox--je_KNzb", 5000).catch(() => null);
+      }
+
+      // Scroll to load more reviews
+      await scrollToLoadMoreReviews(maxScrolls);
+
+      // Extract all reviews
+      reviewData.reviews = extractReviewsFromPopup();
+
+      console.log(`Extracted ${reviewData.reviews.length} reviews`);
+
+      if (autoClose) {
+        closeReviewPopup();
+      }
+
+      return reviewData;
+    } catch (error) {
+      console.error("Error extracting reviews:", error);
+      return reviewData;
+    }
+  }
+
+  // Get all review photos as a flat array
+  function getAllReviewPhotos() {
+    const allPhotos = [];
+    reviewData.reviews.forEach((review, reviewIndex) => {
+      review.photos.forEach((photo, photoIndex) => {
+        allPhotos.push({
+          url: photo,
+          reviewIndex: reviewIndex + 1,
+          photoIndex: photoIndex + 1,
+          reviewDate: review.date,
+          reviewUsername: review.username,
+        });
+      });
+    });
+    return allPhotos;
+  }
+
+  // Extract media from the page
+  function extractMedia() {
+    const images = new Set();
+    const videos = new Set();
+
+    // Extract product images ONLY from the main product slider
+    // AliExpress uses class pattern: slider--slider--[randomId]
+    const sliderContainer = document.querySelector(
+      '[class*="slider--slider--"]'
+    );
+    if (sliderContainer) {
+      sliderContainer.querySelectorAll("img").forEach((img) => {
+        let src = img.src || img.dataset.src || img.getAttribute("data-src");
+
+        if (
+          src &&
+          src.startsWith("http") &&
+          !src.includes("pixel") &&
+          !src.includes("transparent")
+        ) {
+          // Clean URL: remove size parameters like _220x220q75 from the URL
+          // Example: .jpg_220x220q75.jpg_.avif -> .jpg_.avif
+          const cleanUrl = src.replace(
+            /_([\d]+x[\d]+q?[\d]*)(\.[^_.]+)?(_\.[^.]+)$/i,
+            "$3"
+          );
+          images.add(cleanUrl);
+        }
+      });
+    }
+
+    // Extract videos from the slider container
+    if (sliderContainer) {
+      sliderContainer
+        .querySelectorAll("video source, video")
+        .forEach((video) => {
+          let src = video.src || video.currentSrc;
+          if (src && src.startsWith("http")) {
+            videos.add(src);
+          }
+        });
+    }
+
+    // Extract videos from video elements with AliExpress video class pattern
+    // Class pattern: video--video--[randomId]
+    document.querySelectorAll('[class*="video--video--"]').forEach((video) => {
+      // Get src from video element directly
+      if (video.src && video.src.startsWith("http")) {
+        videos.add(video.src);
+      }
+      if (video.currentSrc && video.currentSrc.startsWith("http")) {
+        videos.add(video.currentSrc);
+      }
+      // Get src from source elements inside video
+      video.querySelectorAll("source").forEach((source) => {
+        if (source.src && source.src.startsWith("http")) {
+          videos.add(source.src);
+        }
+      });
+    });
+
+    // Also search for any video elements in the page that might contain product videos
+    // This catches videos that may be rendered differently
+    document.querySelectorAll("video").forEach((video) => {
+      // Check if it's a product-related video (not ads or other videos)
+      const isProductVideo =
+        video.closest('[class*="slider--"]') ||
+        video.closest('[class*="video--"]') ||
+        video.closest('[class*="product--"]') ||
+        video.closest('[class*="gallery--"]') ||
+        video.closest('[class*="media--"]');
+
+      if (isProductVideo) {
+        // Get src from video element directly
+        if (video.src && video.src.startsWith("http")) {
+          videos.add(video.src);
+        }
+        if (video.currentSrc && video.currentSrc.startsWith("http")) {
+          videos.add(video.currentSrc);
+        }
+        // Get src from source elements inside video
+        video.querySelectorAll("source").forEach((source) => {
+          if (source.src && source.src.startsWith("http")) {
+            videos.add(source.src);
+          }
+        });
+      }
+    });
+
+    mediaData.images = Array.from(images);
+
+    mediaData.videos = Array.from(videos);
+
+    console.log("Extracted media:", mediaData);
+    return mediaData;
+  }
+
+  // Download a file as blob
+  async function fetchAsBlob(url) {
+    try {
+      const response = await fetch(url);
+      if (!response.ok)
+        throw new Error(`HTTP error! status: ${response.status}`);
+      return await response.blob();
+    } catch (error) {
+      console.error(`Failed to fetch ${url}:`, error);
+      return null;
+    }
+  }
+
+  // Get file extension from URL
+  function getExtensionFromUrl(url, defaultExt) {
+    try {
+      const urlObj = new URL(url);
+      const pathname = urlObj.pathname;
+      // Handle .avif and other extensions
+      const match = pathname.match(/\.([a-z0-9]+)$/i);
+      if (match) {
+        return match[1].toLowerCase();
+      }
+    } catch (e) {
+      console.warn("Failed to parse URL:", url);
+    }
+    return defaultExt;
+  }
+
+  // Download media files as ZIP
+  async function downloadMedia(type) {
+    const zip = new JSZip();
+    let productName = getProductName();
+    let errors = [];
+    let totalFiles = 0;
+
+    // Collect files to download
+    const filesToProcess = [];
+
+    if (type === "images" || type === "all") {
+      mediaData.images.forEach((url, index) => {
+        const ext = getExtensionFromUrl(url, "jpg");
+        const filename = `${productName}_image_${index + 1}.${ext}`;
+        filesToProcess.push({ url, filename, type: "image" });
+      });
+    }
+
+    if (type === "videos" || type === "all") {
+      mediaData.videos.forEach((url, index) => {
+        const ext = getExtensionFromUrl(url, "mp4");
+        const filename = `${productName}_video_${index + 1}.${ext}`;
+        filesToProcess.push({ url, filename, type: "video" });
+      });
+    }
+
+    totalFiles = filesToProcess.length;
+
+    if (totalFiles === 0) {
+      return {
+        success: false,
+        downloaded: 0,
+        errors: ["No media found to download"],
+      };
+    }
+
+    console.log(`Starting download of ${totalFiles} files...`);
+
+    // Fetch all files and add to zip
+    for (const file of filesToProcess) {
+      try {
+        console.log(`Fetching: ${file.filename}`);
+        const blob = await fetchAsBlob(file.url);
+        if (blob) {
+          zip.file(file.filename, blob);
+        } else {
+          errors.push(file.filename);
+        }
+      } catch (error) {
+        console.error(`Failed to process ${file.filename}:`, error);
+        errors.push(file.filename);
+      }
+    }
+
+    // Generate and download ZIP
+    try {
+      console.log("Generating ZIP file...");
+      const zipBlob = await zip.generateAsync({
+        type: "blob",
+        compression: "DEFLATE",
+        compressionOptions: { level: 6 },
+      });
+
+      // Create download link
+      const zipFilename = `${productName}_media.zip`;
+      const downloadUrl = URL.createObjectURL(zipBlob);
+
+      // Send to background script for download
+      chrome.runtime.sendMessage(
+        { action: "downloadZip", url: downloadUrl, filename: zipFilename },
+        (response) => {
+          // Revoke the object URL after a delay to allow download to start
+          setTimeout(() => URL.revokeObjectURL(downloadUrl), 10000);
+        }
+      );
+
+      console.log(`ZIP created: ${zipFilename}`);
+
+      return {
+        success: true,
+        downloaded: totalFiles - errors.length,
+        errors: errors,
+      };
+    } catch (error) {
+      console.error("Failed to generate ZIP:", error);
+      return {
+        success: false,
+        downloaded: 0,
+        errors: ["Failed to generate ZIP file"],
+      };
+    }
+  }
+
+  // Get product ID from URL
+  function getProductId() {
+    try {
+      const pathname = window.location.pathname;
+      // Match /item/1234567890.html or /item/1234567890
+      const match = pathname.match(/\/item\/(\d+)/);
+      return match ? match[1] : null;
+    } catch (error) {
+      console.error("Error extracting product ID:", error);
+      return null;
+    }
+  }
+
+  // Get raw product name (full, unsanitized)
+  function getRawProductName() {
+    // Priority: Use the specific AliExpress product title element
+    const productTitle = document.querySelector('[data-pl="product-title"]');
+    if (productTitle && productTitle.textContent.trim()) {
+      return productTitle.textContent.trim();
+    }
+
+    // Fallback: Try other selectors
+    const titleSelectors = [
+      'h1[data-pl="product-title"]',
+      '[class*="title--wrap--"] h1',
+      "h1",
+    ];
+
+    for (const selector of titleSelectors) {
+      const element = document.querySelector(selector);
+      if (element && element.textContent.trim()) {
+        return element.textContent.trim();
+      }
+    }
+
+    // Fallback to page title
+    return document.title.split("-")[0].trim();
+  }
+
+  // Get product name for filename (sanitized, truncated for file naming)
+  function getProductName() {
+    const rawName = getRawProductName();
+    return sanitizeFilename(rawName);
+  }
+
+  // Create slug for folder name (lowercase, hyphens, URL-safe)
+  function slugify(name) {
+    return (
+      name
+        .toLowerCase()
+        .replace(/[^a-z0-9\s\-]/gi, "")
+        .replace(/\s+/g, "-")
+        .replace(/-{2,}/g, "-")
+        .replace(/^-|-$/g, "")
+        .substring(0, 100) || "product"
+    );
+  }
+
+  // Sanitize filename (for file naming, shorter)
+  function sanitizeFilename(name) {
+    return (
+      name
+        .replace(/[^a-z0-9\s\-\_]/gi, "")
+        .replace(/\s+/g, "_")
+        .replace(/_{2,}/g, "_")
+        .substring(0, 80) || "aliexpress_product"
+    );
+  }
+
+  // Get folder name combining product ID and name
+  function getProductFolderName() {
+    const productId = getProductId();
+    const rawName = getRawProductName();
+    const slug = slugify(rawName);
+
+    if (productId) {
+      return `${productId}-${slug}`;
+    }
+    return slug;
+  }
+
+  // Listen for messages from popup/sidebar
+  chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === "getMediaData") {
+      extractMedia();
+      sendResponse({
+        success: true,
+        images: mediaData.images,
+        videos: mediaData.videos,
+        productName: getProductName(),
+        productId: getProductId(),
+        rawProductName: getRawProductName(),
+        productFolderName: getProductFolderName(),
+      });
+      return true;
+    }
+
+    if (request.action === "downloadMedia") {
+      downloadMedia(request.type)
+        .then((result) => {
+          sendResponse(result);
+        })
+        .catch((error) => {
+          sendResponse({
+            success: false,
+            error: error.message,
+          });
+        });
+      return true;
+    }
+
+    if (request.action === "uploadToDrive") {
+      uploadToDrive(request.type, request.folderPath)
+        .then((result) => {
+          sendResponse(result);
+        })
+        .catch((error) => {
+          sendResponse({
+            success: false,
+            error: error.message,
+          });
+        });
+      return true;
+    }
+
+    // Review extraction handlers
+    if (request.action === "extractReviews") {
+      const options = {
+        openPopup: request.openPopup !== false,
+        maxScrolls: request.maxScrolls || 20,
+        autoClose: request.autoClose || false,
+      };
+
+      extractAllReviews(options)
+        .then((result) => {
+          sendResponse({
+            success: true,
+            reviews: result.reviews,
+            totalCount: result.totalCount,
+            averageRating: result.averageRating,
+            reviewPhotos: getAllReviewPhotos(),
+          });
+        })
+        .catch((error) => {
+          sendResponse({
+            success: false,
+            error: error.message,
+          });
+        });
+      return true;
+    }
+
+    if (request.action === "getReviewData") {
+      sendResponse({
+        success: true,
+        reviews: reviewData.reviews,
+        totalCount: reviewData.totalCount,
+        averageRating: reviewData.averageRating,
+        reviewPhotos: getAllReviewPhotos(),
+      });
+      return true;
+    }
+
+    if (request.action === "openReviewPopup") {
+      openReviewPopup()
+        .then((result) => {
+          sendResponse({ success: result });
+        })
+        .catch((error) => {
+          sendResponse({ success: false, error: error.message });
+        });
+      return true;
+    }
+
+    if (request.action === "closeReviewPopup") {
+      closeReviewPopup();
+      sendResponse({ success: true });
+      return true;
+    }
+
+    if (request.action === "downloadReviewPhotos") {
+      downloadReviewPhotos()
+        .then((result) => {
+          sendResponse(result);
+        })
+        .catch((error) => {
+          sendResponse({
+            success: false,
+            error: error.message,
+          });
+        });
+      return true;
+    }
+
+    if (request.action === "uploadReviewsToDrive") {
+      uploadReviewsToDrive(request.folderPath, request.includePhotos)
+        .then((result) => {
+          sendResponse(result);
+        })
+        .catch((error) => {
+          sendResponse({
+            success: false,
+            error: error.message,
+          });
+        });
+      return true;
+    }
+  });
+
+  // Upload media files to Google Drive
+  async function uploadToDrive(type, baseFolderPath) {
+    let productName = getProductName();
+    let errors = [];
+    let uploaded = 0;
+    let imageLinks = [];
+    let videoLinks = [];
+
+    // Auto-generate product folder path
+    const productFolderName = getProductFolderName();
+    const folderPath = baseFolderPath
+      ? `${baseFolderPath.replace(/\/$/, "")}/${productFolderName}`
+      : productFolderName;
+
+    // Collect files to upload
+    const filesToProcess = [];
+
+    if (type === "images" || type === "all") {
+      mediaData.images.forEach((url, index) => {
+        const ext = getExtensionFromUrl(url, "jpg");
+        const filename = `${productName}_image_${index + 1}.${ext}`;
+        filesToProcess.push({ url, filename, type: "image" });
+      });
+    }
+
+    if (type === "videos" || type === "all") {
+      mediaData.videos.forEach((url, index) => {
+        const ext = getExtensionFromUrl(url, "mp4");
+        const filename = `${productName}_video_${index + 1}.${ext}`;
+        filesToProcess.push({ url, filename, type: "video" });
+      });
+    }
+
+    const totalFiles = filesToProcess.length;
+
+    if (totalFiles === 0) {
+      return {
+        success: false,
+        uploaded: 0,
+        errors: ["No media found to upload"],
+        imageLinks: [],
+        videoLinks: [],
+      };
+    }
+
+    console.log(`Starting upload of ${totalFiles} files to Google Drive...`);
+
+    // Upload each file
+    for (let i = 0; i < filesToProcess.length; i++) {
+      const file = filesToProcess[i];
+      try {
+        console.log(`Uploading: ${file.filename}`);
+
+        // Update progress
+        const percent = Math.round(((i + 0.5) / totalFiles) * 100);
+        chrome.runtime.sendMessage({
+          action: "uploadProgress",
+          percent: percent,
+          message: `Mengupload ${file.filename}...`,
+        });
+
+        // Fetch file as blob
+        const blob = await fetchAsBlob(file.url);
+        if (!blob) {
+          errors.push(file.filename);
+          continue;
+        }
+
+        // Convert blob to base64
+        const base64 = await blobToBase64(blob);
+
+        // Send to background for upload
+        const result = await new Promise((resolve, reject) => {
+          chrome.runtime.sendMessage(
+            {
+              action: "uploadFileToDrive",
+              filename: file.filename,
+              mimeType: blob.type || getMimeType(file.filename),
+              base64Data: base64,
+              folderPath: folderPath,
+            },
+            (response) => {
+              if (response && response.success) {
+                resolve(response);
+              } else {
+                reject(new Error(response?.error || "Upload failed"));
+              }
+            }
+          );
+        });
+
+        if (result.success) {
+          uploaded++;
+          // Store the webViewLink based on file type
+          if (result.webViewLink) {
+            if (file.type === "image") {
+              imageLinks.push(result.webViewLink);
+            } else if (file.type === "video") {
+              videoLinks.push(result.webViewLink);
+            }
+          }
+        }
+
+        // Update progress
+        const completePercent = Math.round(((i + 1) / totalFiles) * 100);
+        chrome.runtime.sendMessage({
+          action: "uploadProgress",
+          percent: completePercent,
+          message: `Berhasil upload ${uploaded}/${totalFiles} file`,
+        });
+      } catch (error) {
+        console.error(`Failed to upload ${file.filename}:`, error);
+        errors.push(file.filename);
+      }
+    }
+
+    return {
+      success: true,
+      uploaded: uploaded,
+      total: totalFiles,
+      errors: errors,
+      imageLinks: imageLinks,
+      videoLinks: videoLinks,
+    };
+  }
+
+  // Convert blob to base64
+  function blobToBase64(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64 = reader.result.split(",")[1];
+        resolve(base64);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  // Get MIME type from filename
+  function getMimeType(filename) {
+    const ext = filename.split(".").pop().toLowerCase();
+    const mimeTypes = {
+      jpg: "image/jpeg",
+      jpeg: "image/jpeg",
+      png: "image/png",
+      gif: "image/gif",
+      webp: "image/webp",
+      avif: "image/avif",
+      mp4: "video/mp4",
+      webm: "video/webm",
+      mov: "video/quicktime",
+    };
+    return mimeTypes[ext] || "application/octet-stream";
+  }
+
+  // Download review photos as ZIP
+  async function downloadReviewPhotos() {
+    const zip = new JSZip();
+    let productName = getProductName();
+    let errors = [];
+    const allPhotos = getAllReviewPhotos();
+
+    if (allPhotos.length === 0) {
+      return {
+        success: false,
+        downloaded: 0,
+        errors: ["No review photos found. Please extract reviews first."],
+      };
+    }
+
+    console.log(`Starting download of ${allPhotos.length} review photos...`);
+
+    // Create reviews folder in zip
+    const reviewsFolder = zip.folder("reviews");
+
+    for (let i = 0; i < allPhotos.length; i++) {
+      const photo = allPhotos[i];
+      try {
+        const ext = getExtensionFromUrl(photo.url, "jpg");
+        const filename = `review_${photo.reviewIndex}_photo_${photo.photoIndex}.${ext}`;
+
+        console.log(`Fetching: ${filename}`);
+        const blob = await fetchAsBlob(photo.url);
+
+        if (blob) {
+          reviewsFolder.file(filename, blob);
+        } else {
+          errors.push(filename);
+        }
+      } catch (error) {
+        console.error(`Failed to process review photo:`, error);
+        errors.push(`review_${photo.reviewIndex}_photo_${photo.photoIndex}`);
+      }
+    }
+
+    // Generate and download ZIP
+    try {
+      console.log("Generating review photos ZIP file...");
+      const zipBlob = await zip.generateAsync({
+        type: "blob",
+        compression: "DEFLATE",
+        compressionOptions: { level: 6 },
+      });
+
+      const zipFilename = `${productName}_review_photos.zip`;
+      const downloadUrl = URL.createObjectURL(zipBlob);
+
+      chrome.runtime.sendMessage(
+        { action: "downloadZip", url: downloadUrl, filename: zipFilename },
+        (response) => {
+          setTimeout(() => URL.revokeObjectURL(downloadUrl), 10000);
+        }
+      );
+
+      console.log(`ZIP created: ${zipFilename}`);
+
+      return {
+        success: true,
+        downloaded: allPhotos.length - errors.length,
+        total: allPhotos.length,
+        errors: errors,
+      };
+    } catch (error) {
+      console.error("Failed to generate ZIP:", error);
+      return {
+        success: false,
+        downloaded: 0,
+        errors: ["Failed to generate ZIP file"],
+      };
+    }
+  }
+
+  // Upload reviews data and photos to Google Drive
+  async function uploadReviewsToDrive(baseFolderPath, includePhotos = true) {
+    let productName = getProductName();
+    let errors = [];
+    let uploaded = 0;
+    let reviewPhotoLinks = [];
+
+    // Auto-generate product folder path
+    const productFolderName = getProductFolderName();
+    const folderPath = baseFolderPath
+      ? `${baseFolderPath.replace(/\/$/, "")}/${productFolderName}/reviews`
+      : `${productFolderName}/reviews`;
+
+    // First, upload the review data as JSON
+    try {
+      const reviewJsonData = JSON.stringify(
+        {
+          productId: getProductId(),
+          productName: getRawProductName(),
+          extractedAt: new Date().toISOString(),
+          totalCount: reviewData.totalCount,
+          averageRating: reviewData.averageRating,
+          reviews: reviewData.reviews,
+        },
+        null,
+        2
+      );
+
+      const jsonBlob = new Blob([reviewJsonData], { type: "application/json" });
+      const base64Json = await blobToBase64(jsonBlob);
+
+      chrome.runtime.sendMessage({
+        action: "uploadProgress",
+        percent: 5,
+        message: "Mengupload data review...",
+      });
+
+      const jsonResult = await new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage(
+          {
+            action: "uploadFileToDrive",
+            filename: `${productName}_reviews.json`,
+            mimeType: "application/json",
+            base64Data: base64Json,
+            folderPath: folderPath,
+          },
+          (response) => {
+            if (response && response.success) {
+              resolve(response);
+            } else {
+              reject(new Error(response?.error || "Upload failed"));
+            }
+          }
+        );
+      });
+
+      if (jsonResult.success) {
+        uploaded++;
+      }
+    } catch (error) {
+      console.error("Failed to upload review JSON:", error);
+      errors.push("reviews.json");
+    }
+
+    // Also upload as CSV for easier viewing
+    try {
+      const csvData = generateReviewsCsv();
+      const csvBlob = new Blob([csvData], { type: "text/csv" });
+      const base64Csv = await blobToBase64(csvBlob);
+
+      const csvResult = await new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage(
+          {
+            action: "uploadFileToDrive",
+            filename: `${productName}_reviews.csv`,
+            mimeType: "text/csv",
+            base64Data: base64Csv,
+            folderPath: folderPath,
+          },
+          (response) => {
+            if (response && response.success) {
+              resolve(response);
+            } else {
+              reject(new Error(response?.error || "Upload failed"));
+            }
+          }
+        );
+      });
+
+      if (csvResult.success) {
+        uploaded++;
+      }
+    } catch (error) {
+      console.error("Failed to upload review CSV:", error);
+      errors.push("reviews.csv");
+    }
+
+    // Upload photos if requested
+    if (includePhotos) {
+      const allPhotos = getAllReviewPhotos();
+      const totalPhotos = allPhotos.length;
+
+      for (let i = 0; i < allPhotos.length; i++) {
+        const photo = allPhotos[i];
+        try {
+          const ext = getExtensionFromUrl(photo.url, "jpg");
+          const filename = `review_${photo.reviewIndex}_photo_${photo.photoIndex}.${ext}`;
+
+          // Update progress
+          const percent = Math.round(10 + ((i + 0.5) / totalPhotos) * 85);
+          chrome.runtime.sendMessage({
+            action: "uploadProgress",
+            percent: percent,
+            message: `Mengupload ${filename}...`,
+          });
+
+          const blob = await fetchAsBlob(photo.url);
+          if (!blob) {
+            errors.push(filename);
+            continue;
+          }
+
+          const base64 = await blobToBase64(blob);
+
+          const result = await new Promise((resolve, reject) => {
+            chrome.runtime.sendMessage(
+              {
+                action: "uploadFileToDrive",
+                filename: filename,
+                mimeType: blob.type || getMimeType(filename),
+                base64Data: base64,
+                folderPath: `${folderPath}/photos`,
+              },
+              (response) => {
+                if (response && response.success) {
+                  resolve(response);
+                } else {
+                  reject(new Error(response?.error || "Upload failed"));
+                }
+              }
+            );
+          });
+
+          if (result.success) {
+            uploaded++;
+            if (result.webViewLink) {
+              reviewPhotoLinks.push(result.webViewLink);
+            }
+          }
+
+          // Update progress
+          const completePercent = Math.round(10 + ((i + 1) / totalPhotos) * 85);
+          chrome.runtime.sendMessage({
+            action: "uploadProgress",
+            percent: completePercent,
+            message: `Berhasil upload ${uploaded} file`,
+          });
+        } catch (error) {
+          console.error(`Failed to upload review photo:`, error);
+          errors.push(`review_${photo.reviewIndex}_photo_${photo.photoIndex}`);
+        }
+      }
+    }
+
+    chrome.runtime.sendMessage({
+      action: "uploadProgress",
+      percent: 100,
+      message: `Selesai! ${uploaded} file berhasil diupload`,
+    });
+
+    return {
+      success: true,
+      uploaded: uploaded,
+      errors: errors,
+      reviewPhotoLinks: reviewPhotoLinks,
+    };
+  }
+
+  // Generate CSV from review data
+  function generateReviewsCsv() {
+    const headers = [
+      "No",
+      "Username",
+      "Date",
+      "Rating",
+      "SKU",
+      "Review",
+      "Additional Review",
+      "Helpful Count",
+      "Photo Count",
+      "Photo URLs",
+    ];
+
+    const rows = reviewData.reviews.map((review, index) => {
+      return [
+        index + 1,
+        escapeCsvField(review.username),
+        escapeCsvField(review.date),
+        review.rating,
+        escapeCsvField(review.sku),
+        escapeCsvField(review.reviewText),
+        escapeCsvField(review.additionalReview),
+        review.helpfulCount,
+        review.photos.length,
+        escapeCsvField(review.photos.join(" | ")),
+      ].join(",");
+    });
+
+    return [headers.join(","), ...rows].join("\n");
+  }
+
+  // Escape CSV field
+  function escapeCsvField(field) {
+    if (field === null || field === undefined) return '""';
+    const str = String(field);
+    // If the field contains comma, newline, or quote, wrap in quotes and escape existing quotes
+    if (str.includes(",") || str.includes("\n") || str.includes('"')) {
+      return '"' + str.replace(/"/g, '""') + '"';
+    }
+    return str;
+  }
+
+  // Extract media on page load
+  if (document.readyState === "complete") {
+    setTimeout(extractMedia, 1000);
+  } else {
+    window.addEventListener("load", () => {
+      setTimeout(extractMedia, 1000);
+    });
+  }
+})();

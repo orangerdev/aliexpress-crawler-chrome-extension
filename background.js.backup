@@ -96,10 +96,21 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   if (request.action === "updateSpreadsheet") {
     updateSpreadsheet(
+      request.sheetName,
       request.productId,
       request.productName,
       request.videoLinks,
       request.imageLinks
+    ).then(sendResponse);
+    return true;
+  }
+
+  if (request.action === "updateReviewSpreadsheet") {
+    updateReviewSpreadsheet(
+      request.sheetName,
+      request.productId,
+      request.productName,
+      request.reviews
     ).then(sendResponse);
     return true;
   }
@@ -385,6 +396,7 @@ async function getSpreadsheetId() {
 
 // Update Google Spreadsheet with product data
 async function updateSpreadsheet(
+  sheetName,
   productId,
   productName,
   videoLinks,
@@ -403,6 +415,9 @@ async function updateSpreadsheet(
       throw new Error("Spreadsheet ID belum dikonfigurasi");
     }
 
+    // Use provided sheet name or default to "PRODUCT"
+    const sheet = sheetName || "PRODUCT";
+
     // Format video links (single link or empty)
     const videoLink = videoLinks.length > 0 ? videoLinks[0] : "";
 
@@ -418,8 +433,10 @@ async function updateSpreadsheet(
       imageLinksText,
     ];
 
-    // Append row to spreadsheet
-    const appendUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/A:E:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`;
+    // Append row to spreadsheet with sheet name
+    const appendUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(
+      sheet
+    )}!A:E:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`;
 
     const appendResponse = await fetch(appendUrl, {
       method: "POST",
@@ -443,6 +460,75 @@ async function updateSpreadsheet(
     return { success: true };
   } catch (error) {
     console.error("Update spreadsheet error:", error);
+    return { success: false, error: error.message };
+  }
+}
+
+// Update Google Spreadsheet with review data
+async function updateReviewSpreadsheet(
+  sheetName,
+  productId,
+  productName,
+  reviews
+) {
+  try {
+    if (!authToken) {
+      const authCheck = await checkDriveAuth();
+      if (!authCheck.connected) {
+        throw new Error("Not authenticated with Google");
+      }
+    }
+
+    const spreadsheetId = await getSpreadsheetId();
+    if (!spreadsheetId) {
+      throw new Error("Spreadsheet ID belum dikonfigurasi");
+    }
+
+    // Use provided sheet name or default to "REVIEW"
+    const sheet = sheetName || "REVIEW";
+
+    if (!reviews || reviews.length === 0) {
+      return { success: true, message: "No reviews to update" };
+    }
+
+    // Create rows for each review
+    // Format: [Product ID, Product Name, Rating, Review Text]
+    const rows = reviews.map((review) => [
+      productId || "",
+      productName || "",
+      review.rating || 0,
+      review.reviewText || "",
+    ]);
+
+    // Append rows to spreadsheet with sheet name
+    const appendUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(
+      sheet
+    )}!A:D:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`;
+
+    const appendResponse = await fetch(appendUrl, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${authToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        values: rows,
+      }),
+    });
+
+    if (!appendResponse.ok) {
+      const error = await appendResponse.json();
+      throw new Error(
+        error.error?.message || "Failed to update review spreadsheet"
+      );
+    }
+
+    const result = await appendResponse.json();
+    console.log("Review spreadsheet updated:", result);
+
+    return { success: true, rowsAdded: reviews.length };
+  } catch (error) {
+    console.error("Update review spreadsheet error:", error);
     return { success: false, error: error.message };
   }
 }
